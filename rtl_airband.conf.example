@@ -1,0 +1,26 @@
+devices: ({
+  type = "rtlsdr";
+  index = 0;
+# serial = "00000384";
+  gain = 30.0;
+# correction = 0;
+ mode = "multichannel";
+ sample_rate = 2.56;
+ buffers = 10;
+ centerfreq = 100.000;
+ channels: (
+    {
+      freq = 101.000;
+      outputs: (
+        {
+          type = "file";
+          directory = "/recordings/";
+          filename_template = "r";
+          include_freq = true;
+          dated_subdirectories = true;
+					split_on_transmission = true;
+        }
+      );
+    }
+  );
+});
