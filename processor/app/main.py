@@ -2,10 +2,11 @@ import speech_recognition
 from tempfile import TemporaryFile
 from pydub import AudioSegment
 from os import walk,path
-import sqlite3
 from watchdog.observers import Observer
 from watchdog.events import PatternMatchingEventHandler
 import time
+import pymongo
+from datetime import datetime
 
 class Recording_Processor:
 
@@ -14,13 +15,10 @@ class Recording_Processor:
 		# Initialize
 		self.recognizer = speech_recognition.Recognizer()
 
-		# Connect to sqlite db and initalize
-		self.db = sqlite3.connect("/recordings/transcriptions.sqlite3")
-		self.db.execute('CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, filename TEXT UNIQUE)')
-		self.db.execute('CREATE TABLE IF NOT EXISTS providers (id INTEGER PRIMARY KEY, name TEXT UNIQUE)')
-		self.db.execute('CREATE TABLE IF NOT EXISTS transcriptions (id INTEGER PRIMARY KEY, file_id INTEGER, provider_id INTEGER, date TEXT, transcription TEXT)')
-		self.db.execute('INSERT OR IGNORE INTO providers(name) VALUES("sphinx")')
-		self.db.commit()
+		# Connect to mongo
+		mongo_client = pymongo.MongoClient("mongodb://mongo:27017", username="transcriber", password="transcriber")
+		mongo_db = mongo_client["transcriber"]
+		self.mongo_collection = mongo_db["transcriptions"]
 
 		# Create watchdog file listener
 		watchdog_handler = PatternMatchingEventHandler(patterns=["*"], ignore_patterns=None, ignore_directories=True, case_sensitive=False)
@@ -62,17 +60,18 @@ class Recording_Processor:
 			print("Ignoring file '%s' as its not an mp3...'" % (file))
 			return
 
-		# We might have seen this file already
-		querry = self.db.execute('INSERT OR IGNORE INTO files(filename) VALUES("%s")' % (file))
-		self.db.commit()
-		querry = self.db.execute('SELECT id FROM files where filename = "%s"' % (file))
-		file_id = querry.fetchone()[0]
+		# If we have this file already, get the id. Otherwise insert it
+		cursor = self.mongo_collection.find_one({"filename": file})
+		if cursor is not None:
+			file_id = cursor['_id']
+			cursor = self.mongo_collection.find_one({"_id": file_id})
 
-		# Check for an existing transcription
-		querry = self.db.execute('SELECT date from transcriptions where file_id = "%d" AND provider_id = (SELECT id FROM providers WHERE name = "sphinx")' % (file_id))
-		if len(querry.fetchall()) > 0:
-			print('Existing sphinx transcription found for "%s", skipping...' % (file_path))
-			return
+			# Exit if there is a transcription of this type already
+			if cursor['transcriptions'].get('sphinx') is not None:
+				return
+
+		else:
+			file_id = self.mongo_collection.insert_one({"filename": file, "transcriptions": {}}).inserted_id
 
 		print("Begining transcription on file '%s'" % (file_path))
 
@@ -93,11 +92,19 @@ class Recording_Processor:
 				print("Sphinx could not understand audio")
 			except speech_recognition.RequestError as e:
 				print("Sphinx error; {0}".format(e))
-			
-			# Insert into the db
-			self.db.execute('INSERT INTO transcriptions(file_id, provider_id, date, transcription) VALUES(%d, (SELECT id FROM providers WHERE name = "sphinx"), datetime("now"), "%s")' % (file_id, self.recognizer.recognize_sphinx(audio)))
-			self.db.commit()
 
+			# Update the document with the result
+			self.mongo_collection.update_one(
+				{"_id": file_id},
+				{
+					"$set": { 
+						"transcriptions.sphinx": {
+							"transcription": self.recognizer.recognize_sphinx(audio),
+							"date": datetime.now()
+						}
+					}
+				}
+			)
+		
 if __name__ == "__main__":
 	Recording_Processor()
-	

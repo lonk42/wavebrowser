@@ -1,4 +1,5 @@
 speechrecognition
 pydub
-pcketsphinx
+pocketsphinx
 watchdog
+pymongo

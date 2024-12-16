@@ -4,9 +4,9 @@ WORKDIR /usr/src/app
 
 COPY requirements.txt ./
 COPY app /usr/src/app
-RUN pip install --no-cache-dir -r requirements.txt \
-	&& apt install -y python3-pyaudio build-essential \
-	&& apt install -y --no-install-recommend ffmpeg \
+RUN apt install -y python3-pyaudio build-essential \
+	&& apt install -y --no-install-recommends ffmpeg \
+	&& pip install --no-cache-dir -r requirements.txt \
 	&& apt purge -y build-essential \
 	&& apt autoremove -y
 

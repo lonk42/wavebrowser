@@ -19,3 +19,9 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: transcriber
       MONGO_INITDB_DATABASE: transcriber
 
+  python:
+    image: python:3-slim
+    volumes:
+      - ./processor/app/:/usr/src/app
+      - ./recordings/:/recordings
+    entrypoint: sleep 2d
