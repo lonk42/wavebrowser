@@ -3,6 +3,9 @@ from tempfile import TemporaryFile
 from pydub import AudioSegment
 from os import walk,path
 import sqlite3
+from watchdog.observers import Observer
+from watchdog.events import PatternMatchingEventHandler
+import time
 
 class Recording_Processor:
 
@@ -19,6 +22,14 @@ class Recording_Processor:
 		self.db.execute('INSERT OR IGNORE INTO providers(name) VALUES("sphinx")')
 		self.db.commit()
 
+		# Create watchdog file listener
+		watchdog_handler = PatternMatchingEventHandler(patterns=["*"], ignore_patterns=None, ignore_directories=True, case_sensitive=False)
+		watchdog_handler.on_created = self.on_created
+		# TODO create a delete handler
+		file_observer = Observer()
+		file_observer.schedule(watchdog_handler, "/recordings", recursive=True)
+		file_observer.start()
+
 		# List files in the recordings directory
 		for root, dirs, files in walk("/recordings"):
 
@@ -28,15 +39,28 @@ class Recording_Processor:
 
 			# Call the transcriber against the file
 			for file in files:
+				self.transcribe(root=root, file=file)
 
-				# Only MP3 is supported
-				if not file.endswith(".mp3"):
-					continue
+		# Live forever
+		while True:
+			time.sleep(10)
 
-				self.transcribe(root, file)
+	def on_created(self, event):
+		self.transcribe(file_path = event.src_path)
 
-	def transcribe(self, root, file):
-		file_path = path.join(root,file)
+	def transcribe(self, root=None, file=None, file_path=None):
+
+		# TODO can do the argument handling better here
+		if file_path is not None:
+			root = path.dirname(file_path)
+			file = path.basename(file_path)
+		else:
+			file_path = path.join(root,file)
+
+		# Only MP3 is supported
+		if not file.endswith(".mp3"):
+			print("Ignoring file '%s' as its not an mp3...'" % (file))
+			return
 
 		# We might have seen this file already
 		querry = self.db.execute('INSERT OR IGNORE INTO files(filename) VALUES("%s")' % (file))

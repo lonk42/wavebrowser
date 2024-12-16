@@ -1,4 +1,5 @@
 services:
+
   sdr:
     image: ghcr.io/charlie-foxtrot/rtlsdr-airband:latest
     restart: always
@@ -7,3 +8,14 @@ services:
       - ./recordings:/recordings/
     devices:
       - /dev/bus/usb
+
+  mongo:
+    image: mongo:6.0.20-rc3
+    restart: always
+    volumes:
+      - ./mongo:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: transcriber 
+      MONGO_INITDB_ROOT_PASSWORD: transcriber
+      MONGO_INITDB_DATABASE: transcriber
+
