@@ -20,8 +20,10 @@ services:
       MONGO_INITDB_DATABASE: transcriber
 
   python:
-    image: python:3-slim
+    image: python:3.11-slim
     volumes:
       - ./processor/app/:/usr/src/app
       - ./recordings/:/recordings
+      - ./whisper-cache:/root/.cache/whisper
+      - ./processor/requirements.txt:/requirements.txt
     entrypoint: sleep 2d

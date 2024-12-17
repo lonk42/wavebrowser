@@ -1,4 +1,3 @@
-import speech_recognition
 from tempfile import TemporaryFile
 from pydub import AudioSegment
 from os import walk,path
@@ -12,8 +11,20 @@ class Recording_Processor:
 
 	def __init__(self):
 
-		# Initialize
-		self.recognizer = speech_recognition.Recognizer()
+		# TODO make these config options
+		#self.enabled_models = ['sphinx', 'openai_whisper']
+		self.enabled_models = ['openai_whisper']
+
+		# preload model data
+		if 'openai_whisper' in self.enabled_models:
+			import whisper
+			print("Loading OpenAI Whisper model...")
+			#self.openai_whisper_model = whisper.load_model("base.en")
+			self.openai_whisper_model = whisper.load_model("small.en")
+
+		if 'sphinx' in self.enabled_models:
+			import speech_recognition
+			self.recognizer = speech_recognition.Recognizer()
 
 		# Connect to mongo
 		mongo_client = pymongo.MongoClient("mongodb://mongo:27017", username="transcriber", password="transcriber")
@@ -65,15 +76,43 @@ class Recording_Processor:
 		if cursor is not None:
 			file_id = cursor['_id']
 			cursor = self.mongo_collection.find_one({"_id": file_id})
-
-			# Exit if there is a transcription of this type already
-			if cursor['transcriptions'].get('sphinx') is not None:
-				return
-
 		else:
 			file_id = self.mongo_collection.insert_one({"filename": file, "transcriptions": {}}).inserted_id
 
-		print("Begining transcription on file '%s'" % (file_path))
+		# Sphinx
+		for model in self.enabled_models:
+
+			# Exit if there is a transcription of this type already
+			if self.mongo_collection.find_one({"_id": file_id})['transcriptions'].get(model) is not None:
+				continue
+
+			# TODO this should be better...
+			if model == 'sphinx':
+				self.transcribe_sphinx(file_id, file_path)
+			if model == 'openai_whisper':
+				self.transcribe_openai_whisper(file_id, file_path)
+
+	def transcribe_openai_whisper(self, file_id, file_path):
+		print("Begining OpenAI Whisper transcription on file '%s'" % (file_path))
+
+		transcription = self.openai_whisper_model.transcribe(file_path)["text"]
+		print("OpenAI Whisper transcription: '%s'" % (transcription))
+
+		self.mongo_collection.update_one(
+			{"_id": file_id},
+			{
+				"$set": { 
+					"transcriptions.openai_whisper": {
+						"transcription": transcription,
+						"date": datetime.now()
+					}
+				}
+			}
+		)
+	
+
+	def transcribe_sphinx(self, file_id, file_path):
+		print("Begining Sphinx transcription on file '%s'" % (file_path))
 
 		# Convert file to a wav
 		with TemporaryFile() as temp_file:
@@ -99,7 +138,7 @@ class Recording_Processor:
 				{
 					"$set": { 
 						"transcriptions.sphinx": {
-							"transcription": self.recognizer.recognize_sphinx(audio),
+							"transcription": transcription,
 							"date": datetime.now()
 						}
 					}
