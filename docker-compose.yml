@@ -18,6 +18,8 @@ services:
       MONGO_INITDB_ROOT_USERNAME: transcriber 
       MONGO_INITDB_ROOT_PASSWORD: transcriber
       MONGO_INITDB_DATABASE: transcriber
+    ports:
+      - 127.0.0.1:27017:27017
 
   python:
     image: python:3.11-slim
