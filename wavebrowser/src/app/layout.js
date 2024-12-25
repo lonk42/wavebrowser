@@ -1,4 +1,5 @@
 import "bootstrap/dist/css/bootstrap.css";
+import "bootstrap-icons/font/bootstrap-icons.css";
 import "./globals.css";
 import { Geist, Geist_Mono } from "next/font/google";
 import BootstrapClient from "@/lib/BootstrapClient.js";

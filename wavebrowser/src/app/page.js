@@ -1,30 +1,49 @@
-export default function Home() {
-  return (
-	<main>
+'use client'
+import { useState, useEffect } from "react";
 
+// Build the card elements with the given waves
+const renderDisplayedWaves = (waves) => {
+  if (waves === null) {
+    return ''
+  }
 
-
-
-      <div className="text-center mt-4 col-md-6 mx-auto"> 
-        <h1>WaveBrowser</h1>
- 
-<div className="card mb-3" style={{ maxWidth: "540px" }}>
-  <div className="row g-0">
-    <div className="col-md-4">
-      <img src="..." className="img-fluid rounded-start" alt="..." />
-    </div>
-    <div className="col-md-8">
-      <div className="card-body">
-        <h5 className="card-title">Card title</h5>
-        <p className="card-text">This is a wider card with supporting text below as a natural lead-in to additional content. This content is a little bit longer.</p>
-        <p className="card-text"><small className="text-muted">Last updated 3 mins ago</small></p>
+  return waves.map((item, index) => (
+  <div key={index} className="card mb-3" style={{ maxWidth: "540px" }}>
+    <div className="row g-0">
+      <div className="col-md-4">
+        <i className="bi bi-soundwave"></i>
+      </div>
+      <div className="col-md-8">
+        <div className="card-body">
+          <p className="card-text"><small className="text-muted">{item.filename}</small></p>
+          <p className="card-text">{item.transcriptions.openai_whisper.transcription}</p>
+        </div>
       </div>
     </div>
   </div>
-</div>
+  ));
+};
 
-      
-      </div>
+export default function Home() {
+  const [displayedWaves, setDisplayedWaves] = useState(null);
+
+  // Get a base set of data from mongo
+  useEffect(() => {
+    const fetchData = async () => {
+        const response = await fetch('/api');
+        const result = await response.json();
+        setDisplayedWaves(result);
+    }
+    fetchData()
+  }, [])
+
+  return (
+  <main>
+    <div className="text-center mt-4 col-md-6 mx-auto"> 
+      <h1>WaveBrowser</h1>
+      {renderDisplayedWaves(displayedWaves)}
+    </div>
 	</main>
   )
 }
+
