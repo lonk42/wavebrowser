@@ -6,6 +6,7 @@ from watchdog.events import PatternMatchingEventHandler
 import time
 import pymongo
 from datetime import datetime
+import re
 
 class Recording_Processor:
 
@@ -71,13 +72,23 @@ class Recording_Processor:
 			print("Ignoring file '%s' as its not an mp3...'" % (file))
 			return
 
+		# Extract the datestamp from the filename
+		# Example filename r__20241214_160043_485325000.mp3
+		regex = re.compile("r__(?P<datetime>\d{8}_\d{6})_(?P<frequency>\d{9}).mp3")
+		match = regex.search(file)
+		if match is None:
+			print("Something went wrong parsing the filename for '%s', skipping it..." % (file))
+			return
+		file_datetime = datetime.strptime(match.group(1), '%Y%m%d_%H%M%S')
+		file_frequency = match.group(2)
+
 		# If we have this file already, get the id. Otherwise insert it
 		cursor = self.mongo_collection.find_one({"filename": file})
 		if cursor is not None:
 			file_id = cursor['_id']
 			cursor = self.mongo_collection.find_one({"_id": file_id})
 		else:
-			file_id = self.mongo_collection.insert_one({"filename": file, "transcriptions": {}}).inserted_id
+			file_id = self.mongo_collection.insert_one({"filename": file, "file_path": root, "date": file_datetime, "frequency_hz": file_frequency, "transcriptions": {}}).inserted_id
 
 		# Sphinx
 		for model in self.enabled_models:

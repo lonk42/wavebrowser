@@ -1,3 +1,5 @@
 recordings/
 mongo/
+whisper-cache/
+wavebrowser/public/recordings
 rtl_airband.conf
