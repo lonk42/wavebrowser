@@ -49,7 +49,11 @@ class Recording_Processor:
 
 			# Call the transcriber against the file
 			for file in files:
-				self.transcribe(root=root, file=file)
+				try:
+					self.transcribe(root=root, file=file)
+				except Exception as e:
+					print('Transcription on %s/%s failed:' % (root, file))
+					print(e)
 
 		# Live forever
 		while True:

@@ -1,7 +1,6 @@
 'use client'
 import { useState, useEffect } from "react"
 import { format } from 'date-fns'
-import { Jersey_10 } from "next/font/google";
 
 // Build the card elements with the given waves
 const renderDisplayedWaves = (waves) => {
@@ -9,11 +8,11 @@ const renderDisplayedWaves = (waves) => {
     return '';
   }
 
-  return waves.map((item, index) => <AudioCard key={index} item={item} />);
+  return waves.map((item, index) => <AudioCards key={index} item={item} />);
 };
 
 // The full scope element for each recording
-const AudioCard = ({ item }) => {
+const AudioCards = ({ item }) => {
   const [progress, setProgress] = useState(0);
   const [audio, setAudio] = useState(null);
   const [audioDuration, setAudioDuration] = useState(null);
@@ -25,9 +24,7 @@ const AudioCard = ({ item }) => {
       setAudioDuration(Math.round(preloadAudio.duration)); // Round to nearest second
     });
 
-    return () => {
-      preloadAudio.removeEventListener('loadedmetadata', () => {});
-    };
+    return () => { preloadAudio.removeEventListener('loadedmetadata', () => {}) }
   }, [item.file_path, item.filename]);
 
   useEffect(() => {
@@ -53,7 +50,7 @@ const AudioCard = ({ item }) => {
     }
     const newAudio = new Audio(audioUrl);
     setAudio(newAudio);
-    newAudio.play();
+    newAudio.play().catch((e)=>{})
   };
 
   return (
@@ -75,7 +72,7 @@ const AudioCard = ({ item }) => {
         >
           <div className="d-flex flex-column justify-content-center align-items-center h-100">
             <i className="bi bi-soundwave" style={{ fontSize: "3rem" }}></i>
-            <p className="card-text"><small className="text-muted">{item.frequency_hz / 1000000}</small></p>
+            <p className="card-text"><small className="text-muted">{item.frequency_hz / 1000000} Mhz</small></p>
           </div>
         </div>
 
@@ -125,8 +122,7 @@ export default function Home() {
   // Get a base set of data from mongo
   useEffect(() => {
     const fetchData = async () => {
-        // TODO REMOVE THE DATE FILTER HERE
-        const response = await fetch('/api');
+        const response = await fetch('/api?date=20241225');
         const result = await response.json();
         setDisplayedWaves(result);
     }
