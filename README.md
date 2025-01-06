@@ -1,5 +1,5 @@
 # Wavebrowser
-A stack for recording USB - SDR based radio to file, generating transcriptions aginst those recordings with browsable via a webGUI.
+A stack for recording USB-SDR based radio to file, generating transcriptions aginst those recordings browsable via a webGUI.
 
 ![Transcriber Docker Image](https://img.shields.io/badge/Transcriber%20Docker%20Image-0.0.1-red)
 ![Helm Chart](https://img.shields.io/badge/Helm%20Chart-0.0.1-red)
