@@ -1,0 +1,34 @@
+{{- with .Values.pvcs.sdr_recordings }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  finalizers:
+  - kubernetes.io/pvc-protection
+  name: sdr_recordings
+spec:
+  accessModes:
+    {{- .accessModes | toYaml | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .storage }}
+  volumeMode: {{ .volumeMode | default "Filesystem" }}
+  volumeName: {{ .volumeName }}
+{{- end }}
+{{- with .Values.pvcs.mongo }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  finalizers:
+  - kubernetes.io/pvc-protection
+  name: mongo
+spec:
+  accessModes:
+    {{- .accessModes | toYaml | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .storage }}
+  volumeMode: {{ .volumeMode | default "Filesystem" }}
+  volumeName: {{ .volumeName }}
+{{- end }}

@@ -1,0 +1,38 @@
+---
+pvcs:
+  sdr_recordings:
+    accessModes:
+      - ReadWriteOnce
+    storage: 10Gi
+    volumeMode: Filesystem
+    volumeName: sdr-recordings-pv
+  mongo:
+    accessModes:
+      - ReadWriteOnce
+    storage: 10Gi
+    volumeMode: Filesystem
+    volumeName: mongo-pv
+
+volumes:
+  sdr_recordings:
+    persistentVolumeClaim:
+      claimName: sdr-recordings
+  mongo:
+    persistentVolumeClaim:
+      claimName: mongo
+
+#ingress:
+#  annotations:
+#    example: reee
+#  rules:
+#    - host: example.com
+#      http:
+#        paths:
+#        - backend:
+#            service:
+#              name: 
+#              port:
+#                number: 8080
+#          path: /
+#          pathType: Prefix
+

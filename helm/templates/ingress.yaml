@@ -1,0 +1,14 @@
+{{- if hasKey .Values "ingress" }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Chart.Name }}
+{{- if hasKey .Values.ingress "annotations" }}
+  annotations:
+	  {{- .Values.ingress.annotations | toYaml | nindent 4 }}
+{{- end }}
+spec:
+  rules:
+    {{- .Values.ingress.rules | toYaml | nindent 4 }}
+{{- end }}

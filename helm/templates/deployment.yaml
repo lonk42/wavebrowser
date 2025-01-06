@@ -1,0 +1,51 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Chart.Name }}
+  labels:
+    app: {{ .Chart.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Chart.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Chart.Name }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}-rtlsdr-airband
+          image: ghcr.io/charlie-foxtrot/rtlsdr-airband:v5.0.12
+          imagePullPolicy: Always
+          volumeMounts:
+  			  	- name: sdr-recordings
+              mountPath: /recordings
+        - name: {{ .Chart.Name }}-mongo
+          image: mongo:6.0.20-rc3
+          imagePullPolicy: Always
+          env:
+          - name: MONGO_INITDB_ROOT_USERNAME
+            value: transcriber
+          - name: MONGO_INITDB_ROOT_PASSWORD
+            value: transcriber
+          - name: MONGO_INITDB_DATABASE
+            value: transcriber
+          ports:
+            - containerPort: 27017
+              protocol: TCP
+          volumeMounts:
+            - name: mongo
+              mountPath: /data/db
+        - name: {{ .Chart.Name }}-transcriber
+          image: python:3.11-slim
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: sdr_recordings
+              mountPath: /recordings
+      volumes:
+        - name: sdr_recordings
+          {{- .Values.volumes.sdr_recordings | toYaml | nindent 12 }}
+        - name: mongo
+          {{- .Values.volumes.mongo | toYaml | nindent 12 }}

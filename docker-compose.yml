@@ -1,7 +1,7 @@
 services:
 
   sdr:
-    image: ghcr.io/charlie-foxtrot/rtlsdr-airband:latest
+    image: ghcr.io/charlie-foxtrot/rtlsdr-airband:v5.0.12
     restart: always
     volumes:
       - ./rtl_airband.conf:/app/rtl_airband.conf
