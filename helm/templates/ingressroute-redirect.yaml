@@ -1,0 +1,40 @@
+{{- if and .Values.ingress.enabled .Values.ingress.redirectToHttps -}}
+{{- /*
+Optional HTTP->HTTPS redirect for Traefik. Off by default; enable with
+ingress.redirectToHttps. The Ingress itself should then be bound to the
+websecure entrypoint (e.g. via the
+traefik.ingress.kubernetes.io/router.entrypoints: websecure annotation) so it
+never competes with this redirect on port 80.
+*/ -}}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "wavebrowser.fullname" . }}-redirect-to-https
+  labels:
+    {{- include "wavebrowser.labels" . | nindent 4 }}
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+{{- range .Values.ingress.hosts }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "wavebrowser.fullname" $ }}-http-redirect-{{ .host | replace "." "-" }}
+  labels:
+    {{- include "wavebrowser.labels" $ | nindent 4 }}
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`{{ .host }}`)
+      kind: Rule
+      middlewares:
+        - name: {{ include "wavebrowser.fullname" $ }}-redirect-to-https
+      services:
+        - name: noop@internal
+          kind: TraefikService
+{{- end }}
+{{- end }}

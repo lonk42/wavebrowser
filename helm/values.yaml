@@ -112,6 +112,15 @@ ingress:
   enabled: false
   className: ""
   annotations: {}
+  # TLS blocks, passed through verbatim to the Ingress spec, e.g.:
+  #   tls:
+  #     - hosts: [wavebrowser.example.com]
+  #       secretName: wavebrowser-tls
+  tls: []
+  # When true (and using Traefik), render a Middleware + IngressRoute that
+  # redirect the hosts below from HTTP to HTTPS. See
+  # templates/ingressroute-redirect.yaml.
+  redirectToHttps: false
   hosts:
     - host: wavebrowser.example.com
       paths:
