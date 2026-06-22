@@ -1,30 +1,26 @@
 import { MongoClient, ServerApiVersion } from 'mongodb'
 
-if (!process.env.MONGODB_URI) {
-  throw new Error('Invalid/Missing environment variable: "MONGODB_URI"')
-}
+// Stable API version options.
+const options = { serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true } }
 
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
-const uri = process.env.MONGODB_URI
-const options = { serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true }}
-let client
-let clientPromise
+// Lazily create (and cache) the connection. Done on first request rather than at
+// import time so that `next build` — which imports the route modules without a
+// MONGODB_URI set — does not fail.
+export default function getClientPromise() {
+  if (!process.env.MONGODB_URI) {
+    throw new Error('Invalid/Missing environment variable: "MONGODB_URI"')
+  }
 
-// In development mode, use a global variable so that the value is preserved across module reloads caused by HMR
-if (process.env.NODE_ENV === 'development') {
-    let globalWithMongo = globalThis
-
-    if (!globalWithMongo._mongoClientPromise) {
-        client = new MongoClient(uri, options)
-        globalWithMongo._mongoClientPromise = client.connect()
+  // In development reuse a global so HMR module reloads don't open new clients.
+  if (process.env.NODE_ENV === 'development') {
+    if (!globalThis._mongoClientPromise) {
+      globalThis._mongoClientPromise = new MongoClient(process.env.MONGODB_URI, options).connect()
     }
-    clientPromise = globalWithMongo._mongoClientPromise
+    return globalThis._mongoClientPromise
+  }
 
-// In production mode, it's best to not use a global variable.
-} else {
-    client = new MongoClient(uri, options)
-    clientPromise = client.connect()
+  if (!getClientPromise._promise) {
+    getClientPromise._promise = new MongoClient(process.env.MONGODB_URI, options).connect()
+  }
+  return getClientPromise._promise
 }
-
-// Export a module-scoped MongoClient promise. By doing this in a separate module, the client can be shared across functions.
-export default clientPromise

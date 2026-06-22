@@ -1,4 +1,4 @@
-import connect from '@/lib/Mongo'
+import getClientPromise from '@/lib/Mongo'
 
 // The engine key transcriptions are stored under (transcriptions.<key>).
 // Matches TRANSCRIPTION_KEY in the processor; defaults to "whisper".
@@ -6,7 +6,7 @@ const TRANSCRIPTION_KEY = process.env.TRANSCRIPTION_KEY || 'whisper'
 const MONGODB_DB = process.env.MONGODB_DB || 'transcriber'
 
 export async function GET(request) {
-  const client = await connect
+  const client = await getClientPromise()
 
   // Capture the 'date' GET parameter (YYYYMMDD), defaulting to today.
   const url = new URL(request.url)

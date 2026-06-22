@@ -1,0 +1,57 @@
+# Local dev/test stack — NOT for production (production deploys via helm/).
+#
+#   docker compose -f dev/compose.yaml up --build
+#   open http://localhost:8080   (override with WEB_PORT=… )
+#
+# Builds the web image from webapp/Dockerfile, runs an ephemeral MongoDB, and
+# generates fake transcriptions + sample audio on every startup. No host bind
+# mounts: the seeder and web server share generated audio through a managed
+# volume, and Mongo data is ephemeral.
+name: wavebrowser-dev
+
+services:
+  mongo:
+    image: mongo:6
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  seed:
+    build:
+      context: .
+    environment:
+      MONGODB_URI: mongodb://mongo:27017
+      MONGODB_DB: transcriber
+      RECORDINGS_DIR: /recordings
+      TRANSCRIPTION_KEY: whisper
+      SEED_DAYS: "3"
+      SEED_PER_DAY: "14"
+    volumes:
+      - recordings:/recordings
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: "no"
+
+  web:
+    build:
+      context: ../webapp
+    environment:
+      MONGODB_URI: mongodb://mongo:27017
+      MONGODB_DB: transcriber
+      RECORDINGS_DIR: /recordings
+      TRANSCRIPTION_KEY: whisper
+    ports:
+      - "${WEB_PORT:-8080}:3000"
+    volumes:
+      - recordings:/recordings:ro
+    depends_on:
+      mongo:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+
+volumes:
+  recordings:
