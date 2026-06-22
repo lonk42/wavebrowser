@@ -1,12 +1,5 @@
-# Local recordings / model caches
-recordings/
-whisper-cache/
-
 # Helm chart dependencies (pulled via `helm dependency build`)
 helm/charts/*.tgz
-
-# Local SDR config (use helm values / the ConfigMap instead)
-rtl_airband.conf
 
 # Python
 __pycache__/
