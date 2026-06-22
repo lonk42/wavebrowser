@@ -1,34 +1,32 @@
-{{- with .Values.pvcs.sdr_recordings }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  finalizers:
-  - kubernetes.io/pvc-protection
-  name: sdr_recordings
+  name: {{ include "wavebrowser.fullname" . }}-recordings
+  labels:
+    {{- include "wavebrowser.labels" . | nindent 4 }}
 spec:
   accessModes:
-    {{- .accessModes | toYaml | nindent 4 }}
+    - ReadWriteMany
+  {{- with .Values.recordings.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
   resources:
     requests:
-      storage: {{ .storage }}
-  volumeMode: {{ .volumeMode | default "Filesystem" }}
-  volumeName: {{ .volumeName }}
-{{- end }}
-{{- with .Values.pvcs.mongo }}
+      storage: {{ .Values.recordings.storage }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  finalizers:
-  - kubernetes.io/pvc-protection
-  name: mongo
+  name: {{ include "wavebrowser.fullname" . }}-model-cache
+  labels:
+    {{- include "wavebrowser.labels" . | nindent 4 }}
 spec:
   accessModes:
-    {{- .accessModes | toYaml | nindent 4 }}
+    - ReadWriteOnce
+  {{- with .Values.transcriber.modelCache.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
   resources:
     requests:
-      storage: {{ .storage }}
-  volumeMode: {{ .volumeMode | default "Filesystem" }}
-  volumeName: {{ .volumeName }}
-{{- end }}
+      storage: {{ .Values.transcriber.modelCache.storage }}

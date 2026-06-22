@@ -1,5 +1,6 @@
-recordings/
-mongo/
-whisper-cache/
-wavebrowser/public/recordings
-rtl_airband.conf
+# Helm chart dependencies (pulled via `helm dependency build`)
+helm/charts/*.tgz
+
+# Python
+__pycache__/
+*.pyc

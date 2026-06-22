@@ -1,0 +1,68 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "wavebrowser.fullname" . }}-transcriber
+  labels:
+    {{- include "wavebrowser.labels" . | nindent 4 }}
+    app.kubernetes.io/component: transcriber
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: transcriber
+  template:
+    metadata:
+      labels:
+        {{- include "wavebrowser.labels" . | nindent 8 }}
+        app.kubernetes.io/component: transcriber
+    spec:
+      {{- with .Values.transcriber.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.transcriber.runtimeClassName }}
+      runtimeClassName: {{ . }}
+      {{- end }}
+      containers:
+        - name: transcriber
+          image: "{{ .Values.images.transcriber.repository }}:{{ .Values.images.transcriber.tag }}"
+          imagePullPolicy: {{ .Values.images.transcriber.pullPolicy }}
+          env:
+            {{- range $k, $v := .Values.transcriber.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            - name: MONGODB_DB
+              value: {{ .Values.mongoDatabase | quote }}
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wavebrowser.fullname" . }}-mongo
+                  key: MONGODB_URI
+          volumeMounts:
+            - name: recordings
+              mountPath: {{ .Values.transcriber.env.RECORDINGS_DIR | default "/recordings" }}
+              readOnly: true
+            - name: model-cache
+              mountPath: /root/.cache/huggingface
+          resources:
+            limits:
+              nvidia.com/gpu: {{ .Values.transcriber.gpu }}
+              {{- with .Values.transcriber.resources.limits }}
+              {{- toYaml . | nindent 14 }}
+              {{- end }}
+            {{- with .Values.transcriber.resources.requests }}
+            requests:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+      volumes:
+        - name: recordings
+          persistentVolumeClaim:
+            claimName: {{ include "wavebrowser.fullname" . }}-recordings
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: {{ include "wavebrowser.fullname" . }}-model-cache

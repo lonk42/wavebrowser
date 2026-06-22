@@ -1,0 +1,122 @@
+@import "tailwindcss";
+
+@theme {
+  /* Surfaces — deep cool charcoal, instrument-panel feel */
+  --color-bg: #0a0b0e;
+  --color-surface: #131519;
+  --color-elevated: #1a1d23;
+  --color-line: rgba(255, 255, 255, 0.08);
+  --color-line-strong: rgba(255, 255, 255, 0.16);
+
+  /* Text */
+  --color-fg: #e9ebee;
+  --color-muted: #8b919c;
+  --color-faint: #565b64;
+
+  /* Single luminous "live signal" accent */
+  --color-signal: #bef24a;
+  --color-signal-soft: rgba(190, 242, 74, 0.14);
+
+  /* Type — distinctive, domain-appropriate */
+  --font-display: var(--font-bricolage), ui-sans-serif, sans-serif;
+  --font-sans: var(--font-hanken), ui-sans-serif, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: var(--color-signal);
+    color: #0a0b0e;
+  }
+
+  /* Themed scrollbar */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
+}
+
+/* Atmosphere: faint film grain over the whole viewport */
+.grain::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' /%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Radial glow that sits behind the header */
+.signal-glow {
+  background: radial-gradient(
+    60% 140% at 50% 0%,
+    var(--color-signal-soft) 0%,
+    transparent 70%
+  );
+}
+
+/* Staggered entrance for cards */
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-reveal {
+  animation: reveal 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Live pulse for the active/playing indicator */
+@keyframes pulse-signal {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse-signal {
+  animation: pulse-signal 1.6s ease-in-out infinite;
+}
+
+/* Tiny equalizer used on the active card */
+@keyframes eq {
+  0%, 100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.eq-bar {
+  transform-origin: bottom;
+  animation: eq 0.9s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-reveal,
+  .animate-pulse-signal,
+  .eq-bar {
+    animation: none;
+  }
+}
