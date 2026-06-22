@@ -1,8 +1,8 @@
 # Wavebrowser
 A stack for recording USB-SDR based radio to file, generating transcriptions against those recordings, browsable via a web GUI.
 
-![Transcriber Docker Image](https://img.shields.io/badge/Transcriber%20Docker%20Image-0.0.1-red)
-![Helm Chart](https://img.shields.io/badge/Helm%20Chart-0.0.1-red)
+![Transcriber Docker Image](https://img.shields.io/badge/Transcriber%20Docker%20Image-0.1.0-red)
+![Helm Chart](https://img.shields.io/badge/Helm%20Chart-0.1.0-red)
 ![License GPL3.0](https://img.shields.io/badge/License-GPL3.0-blue.svg)
 
 ## Architecture
@@ -34,30 +34,6 @@ helm upgrade --namespace wavebrowser --create-namespace -i wavebrowser wavebrows
 
 MongoDB is provided by the Bitnami subchart by default. To use an existing
 MongoDB, set `mongodb.enabled: false` and `externalMongodb.uri`.
-
-## Building images
-
-Both images are published to `ghcr.io`:
-
-- `ghcr.io/lonk42/wavebrowser-processor` (built from `transcriber/`)
-- `ghcr.io/lonk42/wavebrowser-web` (built from `webapp/`)
-
-### Via CI (GitHub Actions)
-
-Pushing a release tag builds and pushes both images automatically
-(`.github/workflows/publish-image.yml`). The tag becomes the image version:
-
-```
-git tag v0.1.0 && git push origin v0.1.0
-# -> wavebrowser-processor:{0.1.0,0.1,latest} and wavebrowser-web:{...}
-```
-
-### Manually
-
-```
-docker build -t ghcr.io/lonk42/wavebrowser-processor:<tag> transcriber/
-docker build -t ghcr.io/lonk42/wavebrowser-web:<tag> webapp/
-```
 
 ## Configuration
 
