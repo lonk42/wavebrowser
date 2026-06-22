@@ -21,6 +21,10 @@ recordings:
   # cluster default, which is usually RWO and will NOT work for multiple pods.
   storageClassName: ""
   storage: 10Gi
+  # ReadWriteMany so sdr/transcriber/web can share it across nodes. On a
+  # single-node cluster with an RWO-only provisioner (e.g. local-path), set
+  # this to ReadWriteOnce — all pods land on the same node and can share it.
+  accessMode: ReadWriteMany
 
 sdr:
   # Pin to the node with the USB SDR dongle attached.

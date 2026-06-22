@@ -7,7 +7,7 @@ metadata:
     {{- include "wavebrowser.labels" . | nindent 4 }}
 spec:
   accessModes:
-    - ReadWriteMany
+    - {{ .Values.recordings.accessMode | default "ReadWriteMany" }}
   {{- with .Values.recordings.storageClassName }}
   storageClassName: {{ . | quote }}
   {{- end }}
