@@ -1,14 +1,32 @@
-{{- if hasKey .Values "ingress" }}
+{{- if .Values.ingress.enabled -}}
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ .Chart.Name }}
-{{- if hasKey .Values.ingress "annotations" }}
+  name: {{ include "wavebrowser.fullname" . }}-web
+  labels:
+    {{- include "wavebrowser.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
   annotations:
-	  {{- .Values.ingress.annotations | toYaml | nindent 4 }}
-{{- end }}
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
   rules:
-    {{- .Values.ingress.rules | toYaml | nindent 4 }}
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "wavebrowser.fullname" $ }}-web
+                port:
+                  number: {{ $.Values.web.service.port }}
+          {{- end }}
+    {{- end }}
 {{- end }}

@@ -1,0 +1,59 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "wavebrowser.fullname" . }}-sdr
+  labels:
+    {{- include "wavebrowser.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sdr
+spec:
+  replicas: 1
+  # The SDR writes to a single device; never run two at once.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: sdr
+  template:
+    metadata:
+      labels:
+        {{- include "wavebrowser.labels" . | nindent 8 }}
+        app.kubernetes.io/component: sdr
+    spec:
+      {{- with .Values.sdr.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: sdr
+          image: "{{ .Values.images.sdr.repository }}:{{ .Values.images.sdr.tag }}"
+          imagePullPolicy: {{ .Values.images.sdr.pullPolicy }}
+          {{- if .Values.sdr.privileged }}
+          securityContext:
+            privileged: true
+          {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/rtl_airband.conf
+              subPath: rtl_airband.conf
+            - name: recordings
+              mountPath: /recordings
+            {{- if .Values.sdr.privileged }}
+            - name: usb
+              mountPath: /dev/bus/usb
+            {{- end }}
+          resources:
+            {{- toYaml .Values.sdr.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "wavebrowser.fullname" . }}-sdr-config
+        - name: recordings
+          persistentVolumeClaim:
+            claimName: {{ include "wavebrowser.fullname" . }}-recordings
+        {{- if .Values.sdr.privileged }}
+        - name: usb
+          hostPath:
+            path: {{ .Values.sdr.usbHostPath }}
+        {{- end }}

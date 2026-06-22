@@ -11,8 +11,8 @@ let client
 let clientPromise
 
 // In development mode, use a global variable so that the value is preserved across module reloads caused by HMR
-if (process.env.NODE_ENV === 'development') {    
-    let globalWithMongo = MongoClient
+if (process.env.NODE_ENV === 'development') {
+    let globalWithMongo = globalThis
 
     if (!globalWithMongo._mongoClientPromise) {
         client = new MongoClient(uri, options)

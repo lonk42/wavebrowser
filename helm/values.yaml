@@ -1,38 +1,119 @@
 ---
-pvcs:
-  sdr_recordings:
-    accessModes:
-      - ReadWriteOnce
-    storage: 10Gi
-    volumeMode: Filesystem
-    volumeName: sdr-recordings-pv
-  mongo:
-    accessModes:
-      - ReadWriteOnce
-    storage: 10Gi
-    volumeMode: Filesystem
-    volumeName: mongo-pv
+images:
+  sdr:
+    repository: ghcr.io/charlie-foxtrot/rtlsdr-airband
+    tag: v5.0.12
+    pullPolicy: IfNotPresent
+  transcriber:
+    repository: ghcr.io/lonk42/wavebrowser-processor
+    tag: latest
+    pullPolicy: IfNotPresent
+  web:
+    repository: ghcr.io/lonk42/wavebrowser-web
+    tag: latest
+    pullPolicy: IfNotPresent
 
-volumes:
-  sdr_recordings:
-    persistentVolumeClaim:
-      claimName: sdr-recordings
-  mongo:
-    persistentVolumeClaim:
-      claimName: mongo
+# Shared recordings volume. MUST be ReadWriteMany: the sdr pod writes to it
+# while the transcriber and web pods read from it, and they may land on
+# different nodes.
+recordings:
+  # Set to an RWX-capable storage class (e.g. nfs-client). Empty uses the
+  # cluster default, which is usually RWO and will NOT work for multiple pods.
+  storageClassName: ""
+  storage: 10Gi
 
-#ingress:
-#  annotations:
-#    example: reee
-#  rules:
-#    - host: example.com
-#      http:
-#        paths:
-#        - backend:
-#            service:
-#              name: 
-#              port:
-#                number: 8080
-#          path: /
-#          pathType: Prefix
+sdr:
+  # Pin to the node with the USB SDR dongle attached.
+  nodeSelector: {}
+  # Passing the USB bus through requires a privileged container and a hostPath
+  # mount of the device node.
+  privileged: true
+  usbHostPath: /dev/bus/usb
+  resources: {}
+  # Contents of rtl_airband.conf, rendered into a ConfigMap. See
+  # rtl_airband.conf.example in the repo root.
+  config: |
+    devices: ({
+      type = "rtlsdr";
+      index = 0;
+      gain = 30.0;
+      mode = "multichannel";
+      sample_rate = 2.56;
+      buffers = 10;
+      centerfreq = 146.650;
+      channels: (
+        {
+          freq = 146.950;
+          outputs: (
+            {
+              type = "file";
+              directory = "/recordings/";
+              filename_template = "r";
+              include_freq = true;
+              dated_subdirectories = true;
+              split_on_transmission = true;
+            }
+          );
+        }
+      );
+    });
 
+transcriber:
+  # Pin to the GPU node.
+  nodeSelector: {}
+  # Set if your cluster requires a runtime class for GPU pods (e.g. "nvidia").
+  runtimeClassName: ""
+  # Number of GPUs to request/limit (nvidia.com/gpu).
+  gpu: 1
+  resources: {}
+  # Persistent cache for downloaded whisper model weights so they are not
+  # re-downloaded on every restart.
+  modelCache:
+    storageClassName: ""
+    storage: 5Gi
+  env:
+    WHISPER_MODEL: large-v3
+    WHISPER_DEVICE: cuda
+    # int8_float16 keeps large-v3 around ~3.5GB; use float16 (~5GB) for max
+    # accuracy or int8 (~3GB) for the smallest footprint.
+    WHISPER_COMPUTE_TYPE: int8_float16
+    WHISPER_LANGUAGE: en
+    TRANSCRIPTION_KEY: whisper
+    RECORDINGS_DIR: /recordings
+
+web:
+  replicas: 1
+  resources: {}
+  service:
+    type: ClusterIP
+    port: 8080
+  env:
+    TRANSCRIPTION_KEY: whisper
+    RECORDINGS_DIR: /recordings
+
+# Self-hosted MongoDB via the Bitnami subchart. Set enabled: false to use an
+# external instance (provide externalMongodb.uri below).
+mongodb:
+  enabled: true
+  auth:
+    # CHANGE ME. Used both by the subchart and to build the connection URI.
+    rootPassword: transcriber
+  persistence:
+    size: 10Gi
+
+# Used only when mongodb.enabled is false.
+externalMongodb:
+  uri: ""
+
+# Database name used by the app/transcriber.
+mongoDatabase: transcriber
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: wavebrowser.example.com
+      paths:
+        - path: /
+          pathType: Prefix

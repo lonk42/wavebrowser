@@ -1,6 +1,0 @@
-speechrecognition
-pydub
-pocketsphinx
-watchdog
-pymongo
-openai-whisper
