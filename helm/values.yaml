@@ -46,6 +46,9 @@ sdr:
       buffers = 10;
       centerfreq = 146.650;
       channels: (
+        # Recording channel: auto squelch + split_on_transmission, so each
+        # transmission becomes its own MP3 and the channel stays gated (silent)
+        # between transmissions. This is what drives the recordings.
         {
           freq = 146.950;
           outputs: (
@@ -56,11 +59,22 @@ sdr:
               include_freq = true;
               dated_subdirectories = true;
               split_on_transmission = true;
-            },
-            # Continuous live stream for the webapp's "Listen Live" feature.
-            # server/password reference the chart's Icecast deployment (rendered
-            # via tpl in sdr-configmap.yaml). Remove this block if icecast.enabled
-            # is false.
+            }
+          );
+        },
+        # Live channel: a second demodulator on the SAME frequency with the
+        # squelch forced open (squelch_threshold set below the noise floor) so
+        # it streams continuously — including idle band noise — to Icecast for
+        # the webapp's "Listen Live" feature. Kept separate from the recording
+        # channel above so always-on streaming does not interfere with the
+        # squelch-gated recordings; costs roughly one extra narrowband
+        # demodulator's worth of CPU. server/password reference the chart's
+        # Icecast deployment (rendered via tpl in sdr-configmap.yaml). Remove
+        # this channel if icecast.enabled is false.
+        {
+          freq = 146.950;
+          squelch_threshold = -80;
+          outputs: (
             {
               type = "icecast";
               server = "{{ .Release.Name }}-icecast";
