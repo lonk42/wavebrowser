@@ -35,6 +35,13 @@ log = logging.getLogger("transcriber")
 FILENAME_RE = re.compile(r"(?P<datetime>\d{8}_\d{6})_(?P<frequency>\d+)\.mp3$")
 
 
+def _env_bool(name, default):
+    val = os.environ.get(name)
+    if val is None:
+        return default
+    return val.strip().lower() in ("1", "true", "yes", "on")
+
+
 class Config:
     def __init__(self):
         self.mongo_uri = os.environ.get("MONGODB_URI")
@@ -49,6 +56,11 @@ class Config:
         # Key the transcription is stored under in transcriptions.<key>. Kept
         # generic so the web app does not hard-code an engine name.
         self.transcription_key = os.environ.get("TRANSCRIPTION_KEY", "whisper")
+
+        # Delete recordings that transcribe to nothing (silence/static blips) so
+        # they do not accumulate on the shared volume. They produce no card
+        # either way; pruning just reclaims the disk.
+        self.prune_empty = _env_bool("PRUNE_EMPTY", True)
 
         self.whisper_model = os.environ.get("WHISPER_MODEL", "large-v3")
         self.whisper_device = os.environ.get("WHISPER_DEVICE", "cuda")
@@ -108,6 +120,9 @@ class RecordingProcessor:
             patterns=["*.mp3"], ignore_directories=True, case_sensitive=False
         )
         handler.on_created = lambda event: self._safe_transcribe(Path(event.src_path))
+        # Keep MongoDB in sync when a recording is removed from disk (manual
+        # cleanup, retention job, or our own empty-blip pruning).
+        handler.on_deleted = lambda event: self._safe_handle_delete(Path(event.src_path))
         self._observer = Observer()
         self._observer.schedule(handler, str(self.config.recordings_dir), recursive=True)
         self._observer.start()
@@ -141,9 +156,13 @@ class RecordingProcessor:
         log.info("Transcribing %s", rel_path)
         text, info = self._run_whisper(path)
 
-        # Skip empty results (silence/blips) so they do not create dead cards.
+        # Empty result (silence/blips): never creates a card. Prune the file if
+        # configured, otherwise just leave it untranscribed on disk.
         if not text:
-            log.info("Empty transcription for %s, skipping insert", rel_path)
+            if self.config.prune_empty:
+                self._prune(path, rel_path)
+            else:
+                log.info("Empty transcription for %s, skipping insert", rel_path)
             return
 
         self.collection.update_one(
@@ -167,6 +186,27 @@ class RecordingProcessor:
             upsert=True,
         )
         log.info("Stored transcription for %s: %r", rel_path, text)
+
+    def _safe_handle_delete(self, path):
+        try:
+            self._handle_delete(path)
+        except Exception:
+            log.exception("Failed to handle deletion of %s", path)
+
+    def _handle_delete(self, path):
+        rel_path = self._relative_path(path)
+        result = self.collection.delete_one({"rel_path": rel_path})
+        if result.deleted_count:
+            log.info("Removed transcription for deleted recording %s", rel_path)
+
+    def _prune(self, path, rel_path):
+        # Delete the blip file. The on_deleted watcher then drops any matching
+        # document, but empty recordings normally have none.
+        try:
+            path.unlink(missing_ok=True)
+            log.info("Pruned empty recording %s", rel_path)
+        except OSError:
+            log.exception("Failed to prune %s", rel_path)
 
     def _relative_path(self, path):
         try:

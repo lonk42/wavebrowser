@@ -8,19 +8,31 @@ const MONGODB_DB = process.env.MONGODB_DB || 'transcriber'
 export async function GET(request) {
   const client = await getClientPromise()
 
-  // Capture the 'date' GET parameter (YYYYMMDD), defaulting to today.
   const url = new URL(request.url)
-  const dateParam = url.searchParams.get('date')
-  let searchDate = new Date()
 
-  if (dateParam) {
-    searchDate = new Date(`${dateParam.substring(0, 4)}-${dateParam.substring(4, 6)}-${dateParam.substring(6, 8)}`)
+  // Data in mongo is stored UTC. The client (which knows the user's timezone)
+  // sends the start/end of the requested *local* day as explicit UTC instants
+  // (ISO strings), so the range is correct regardless of where the browser or
+  // this server is. We must NOT derive the range from a YYYYMMDD here using the
+  // server's timezone — the server runs in UTC, so a non-UTC user's local day
+  // would be filed under the wrong calendar day.
+  const startParam = url.searchParams.get('start')
+  const endParam = url.searchParams.get('end')
+
+  let rangeStart = startParam ? new Date(startParam) : null
+  let rangeEnd = endParam ? new Date(endParam) : null
+
+  if (!rangeStart || !rangeEnd || isNaN(rangeStart) || isNaN(rangeEnd)) {
+    // Fallback for direct/legacy callers: treat the 'date' param (YYYYMMDD), or
+    // today, as a whole UTC calendar day.
+    const dateParam = url.searchParams.get('date')
+    const base = dateParam
+      ? new Date(Date.UTC(+dateParam.slice(0, 4), +dateParam.slice(4, 6) - 1, +dateParam.slice(6, 8)))
+      : new Date()
+    rangeStart = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate()))
+    rangeEnd = new Date(rangeStart)
+    rangeEnd.setUTCDate(rangeEnd.getUTCDate() + 1)
   }
-
-  // Data in mongo is UTC; convert the requested local day into a UTC range.
-  const searchDateUTC = new Date(searchDate.getTime() + (searchDate.getTimezoneOffset() * 60000))
-  const nextDayUTC = new Date(searchDateUTC)
-  nextDayUTC.setUTCDate(nextDayUTC.getUTCDate() + 1)
 
   const textField = `transcriptions.${TRANSCRIPTION_KEY}.transcription`
 
@@ -29,7 +41,7 @@ export async function GET(request) {
     .collection('transcriptions')
     .find({
       [textField]: { $exists: true, $ne: '' },
-      date: { $gte: searchDateUTC, $lt: nextDayUTC },
+      date: { $gte: rangeStart, $lt: rangeEnd },
     })
     .sort({ date: 1 })
 

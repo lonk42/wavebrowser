@@ -111,6 +111,9 @@ transcriber:
     WHISPER_LANGUAGE: en
     TRANSCRIPTION_KEY: whisper
     RECORDINGS_DIR: /recordings
+    # Delete recordings that transcribe to nothing (silence/static blips) so
+    # they don't accumulate on the shared volume. Set "false" to keep them.
+    PRUNE_EMPTY: "true"
 
 web:
   replicas: 1

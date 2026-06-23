@@ -1,6 +1,5 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
-import { format } from "date-fns";
 import { PlayerProvider, usePlayer } from "@/context/PlayerContext";
 import AppHeader from "@/components/AppHeader";
 import RecordingCard from "@/components/RecordingCard";
@@ -24,24 +23,86 @@ function Dashboard() {
   const [activeFreq, setActiveFreq] = useState(null);
   const [liveOpen, setLiveOpen] = useState(false);
 
-  // Fetch a day's recordings.
+  // Fetch a day's recordings, then — while viewing the current day — subscribe
+  // to a live SSE stream so new transcriptions appear within ~1s of being
+  // written, without re-fetching the whole day.
   useEffect(() => {
     let cancelled = false;
+
+    // Send the selected *local* day's bounds as UTC instants so the server
+    // (which stores/queries UTC) returns the day the user actually sees,
+    // regardless of timezone. Passing a bare YYYYMMDD would be misread as a
+    // UTC day and drop a chunk of a non-UTC user's day.
+    const start = new Date(date);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    const url = `/api?start=${start.toISOString()}&end=${end.toISOString()}`;
+
+    // Merge live items into the day, keyed by _id so existing cards and the
+    // now-playing track are untouched and new ones slot in by time. Returns the
+    // same array reference when nothing changed, to avoid a needless re-render.
+    const mergeIntoDay = (incoming) => {
+      const fresh = incoming.filter((it) => {
+        const t = new Date(it.date);
+        return t >= start && t < end;
+      });
+      if (fresh.length === 0) return;
+      setWaves((prev) => {
+        const byId = new Map(prev.map((w) => [w._id, w]));
+        let changed = false;
+        for (const it of fresh) {
+          if (!byId.has(it._id)) {
+            byId.set(it._id, it);
+            changed = true;
+          }
+        }
+        if (!changed) return prev;
+        return [...byId.values()].sort(
+          (a, b) => new Date(a.date) - new Date(b.date)
+        );
+      });
+    };
+
+    // New day selected: show the skeleton and reset filters. Live merges only
+    // touch the data, so active search/frequency filters survive.
     setLoading(true);
     setActiveFreq(null);
     setQuery("");
 
     (async () => {
-      const res = await fetch(`/api?date=${format(date, "yyyyMMdd")}`);
-      const result = await res.json();
-      if (!cancelled) {
-        setWaves(Array.isArray(result) ? result : []);
-        setLoading(false);
+      try {
+        const res = await fetch(url, { cache: "no-store" });
+        const result = await res.json();
+        if (!cancelled && Array.isArray(result)) setWaves(result);
+      } catch {
+        if (!cancelled) setWaves([]);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     })();
 
+    // Only the current local day grows, so only stream then. EventSource
+    // auto-reconnects on its own if the connection drops.
+    const isToday = start.toDateString() === new Date().toDateString();
+    let es = null;
+    if (isToday) {
+      es = new EventSource("/api/events");
+      es.onmessage = (ev) => {
+        if (cancelled) return;
+        let items;
+        try {
+          items = JSON.parse(ev.data);
+        } catch {
+          return;
+        }
+        if (Array.isArray(items) && items.length) mergeIntoDay(items);
+      };
+    }
+
     return () => {
       cancelled = true;
+      if (es) es.close();
     };
   }, [date]);
 

@@ -56,8 +56,11 @@ The transcriber is configured via environment variables (set under
 | `WHISPER_LANGUAGE` | `en` | empty to auto-detect |
 | `WHISPER_INITIAL_PROMPT` | _(unset)_ | optional domain phrasing hint |
 | `TRANSCRIPTION_KEY` | `whisper` | document key transcriptions are stored under |
+| `PRUNE_EMPTY` | `true` | delete recordings that transcribe to nothing (silence/static blips) instead of leaving them on the shared volume; set `false` to keep them |
 | `MONGODB_URI` | _(from secret)_ | |
 
-### TODO
-* Post-process recordings to prune tiny/blip files (currently empty transcriptions are skipped, so they exist on disk but produce no card)
-* Add a delete handler so removed recordings drop out of MongoDB
+Recordings that yield an empty transcription never produce a card. With
+`PRUNE_EMPTY` on (the default) they are deleted from disk so blips don't fill the
+volume. The transcriber also watches for file deletions: removing a recording
+from the recordings volume (manual cleanup, a retention job, or the pruning
+above) drops its document from MongoDB, so it disappears from the web GUI.
