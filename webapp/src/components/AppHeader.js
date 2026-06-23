@@ -1,5 +1,5 @@
 "use client";
-import { Radio, RadioTower } from "lucide-react";
+import { Radio, RadioTower, ArrowDownToLine } from "lucide-react";
 import DayPager from "./DayPager";
 import SearchBar from "./SearchBar";
 import DayTimeline from "./DayTimeline";
@@ -15,9 +15,12 @@ export default function AppHeader({
   onFreqChange,
   count,
   items,
+  visibleRange,
   onPickTime,
   liveOpen,
   onToggleLive,
+  autoscroll,
+  onToggleAutoscroll,
 }) {
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-bg/80 backdrop-blur-xl">
@@ -41,6 +44,19 @@ export default function AppHeader({
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={onToggleAutoscroll}
+              aria-pressed={autoscroll}
+              title="Keep the newest transmissions in view"
+              className={`flex items-center gap-1.5 rounded-md border px-2.5 py-2 font-mono text-[0.65rem] uppercase tracking-[0.15em] transition-colors ${
+                autoscroll
+                  ? "border-signal/40 bg-signal-soft text-signal"
+                  : "border-line text-muted hover:border-signal/40 hover:text-signal"
+              }`}
+            >
+              <ArrowDownToLine className="size-4" />
+              Auto
+            </button>
             <button
               onClick={onToggleLive}
               aria-pressed={liveOpen}
@@ -75,7 +91,7 @@ export default function AppHeader({
 
         {items.length > 0 && (
           <div className="mt-4">
-            <DayTimeline items={items} onPick={onPickTime} />
+            <DayTimeline items={items} visibleRange={visibleRange} onPick={onPickTime} />
           </div>
         )}
       </div>

@@ -11,7 +11,7 @@ const secOfDay = (d) => {
 // A 24-hour activity histogram. Bar height shows how many recordings fall in
 // each bucket (so clusters stand out); clicking anywhere jumps the list to that
 // time via onPick(fraction 0..1).
-export default function DayTimeline({ items, onPick }) {
+export default function DayTimeline({ items, visibleRange, onPick }) {
   const { current } = usePlayer();
 
   const { counts, max } = useMemo(() => {
@@ -40,6 +40,17 @@ export default function DayTimeline({ items, onPick }) {
       >
         {/* baseline */}
         <div className="pointer-events-none absolute inset-x-1 bottom-1 h-px bg-line" />
+
+        {/* currently-visible window — the span of the day the list is scrolled to */}
+        {visibleRange && (
+          <div
+            className="pointer-events-none absolute inset-y-1 rounded-sm border-x border-signal/50 bg-signal/10"
+            style={{
+              left: `${visibleRange[0] * 100}%`,
+              width: `${Math.max(0.6, (visibleRange[1] - visibleRange[0]) * 100)}%`,
+            }}
+          />
+        )}
 
         {/* hour gridlines */}
         {[6, 12, 18].map((h) => (

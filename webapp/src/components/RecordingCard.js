@@ -5,6 +5,16 @@ import { usePlayer } from "@/context/PlayerContext";
 
 const mhz = (hz) => (Number(hz) / 1e6).toFixed(3);
 
+// Compact, subtle recording length. Sub-minute clips read as "4.2s"; longer
+// ones as "1:23". Returns null when no duration was stored (older records).
+const fmtDuration = (s) => {
+  if (s == null || !isFinite(s)) return null;
+  if (s < 60) return `${s.toFixed(s < 10 ? 1 : 0)}s`;
+  const m = Math.floor(s / 60);
+  const r = Math.round(s % 60);
+  return `${m}:${String(r).padStart(2, "0")}`;
+};
+
 export default function RecordingCard({ item, index }) {
   const { currentId, isPlaying, playTrack } = usePlayer();
   const isActive = currentId === item._id;
@@ -39,21 +49,23 @@ export default function RecordingCard({ item, index }) {
       </span>
 
       {/* Time — the primary readout */}
-      <div className="flex w-[6.5rem] shrink-0 flex-col justify-center border-r border-line pr-4 sm:w-28">
-        <div className="flex items-baseline font-mono tabular-nums leading-none">
-          <span
-            className={`text-3xl font-semibold tracking-tight ${
-              isActive ? "text-signal" : "text-fg"
-            }`}
-          >
-            {format(date, "HH:mm")}
-          </span>
-          <span className="ml-0.5 text-base text-muted">:{format(date, "ss")}</span>
-        </div>
+      <div className="flex w-[7.5rem] shrink-0 flex-col justify-center border-r border-line pr-4 sm:w-[8.5rem]">
+        <span
+          className={`font-mono text-2xl font-semibold tabular-nums leading-none tracking-tight ${
+            isActive ? "text-signal" : "text-fg"
+          }`}
+        >
+          {format(date, "HH:mm:ss")}
+        </span>
         <span className="mt-2 font-mono text-xs tracking-tight text-muted">
           {mhz(item.frequency_hz)}
           <span className="ml-1 text-[0.6rem] uppercase tracking-[0.15em] text-faint">MHz</span>
         </span>
+        {fmtDuration(item.duration) && (
+          <span className="mt-1 font-mono text-[0.6rem] tracking-tight text-faint">
+            {fmtDuration(item.duration)}
+          </span>
+        )}
       </div>
 
       {/* Transcription */}

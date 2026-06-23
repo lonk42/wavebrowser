@@ -173,6 +173,8 @@ class RecordingProcessor:
                     "rel_path": rel_path,
                     "date": file_datetime,
                     "frequency_hz": frequency_hz,
+                    # Audio length in seconds, from whisper's probe of the file.
+                    "duration": round(float(info.duration), 1),
                 },
                 "$set": {
                     f"transcriptions.{self.config.transcription_key}": {

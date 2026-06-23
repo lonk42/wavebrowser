@@ -1,9 +1,14 @@
 "use client";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { PlayerProvider, usePlayer } from "@/context/PlayerContext";
 import AppHeader from "@/components/AppHeader";
 import RecordingCard from "@/components/RecordingCard";
 import NowPlayingBar from "@/components/NowPlayingBar";
+
+const secOfDay = (d) => {
+  const x = new Date(d);
+  return x.getHours() * 3600 + x.getMinutes() * 60 + x.getSeconds();
+};
 
 export default function Home() {
   return (
@@ -22,6 +27,10 @@ function Dashboard() {
   const [query, setQuery] = useState("");
   const [activeFreq, setActiveFreq] = useState(null);
   const [liveOpen, setLiveOpen] = useState(false);
+  const [autoscroll, setAutoscroll] = useState(true);
+  // [startFraction, endFraction] of the day currently within the viewport, used
+  // to draw the "you are here" window on the timeline. null when nothing's shown.
+  const [visibleRange, setVisibleRange] = useState(null);
 
   // Fetch a day's recordings, then — while viewing the current day — subscribe
   // to a live SSE stream so new transcriptions appear within ~1s of being
@@ -120,19 +129,70 @@ function Dashboard() {
     });
   }, [waves, query, activeFreq]);
 
-  // The player navigates whatever is currently visible.
+  // Display newest-first. `filtered` stays chronological (used by the timeline's
+  // pick logic); `view` is what the list renders and the player navigates.
+  const view = useMemo(() => [...filtered].reverse(), [filtered]);
+
+  // The player navigates whatever is currently visible, in display order.
   useEffect(() => {
-    setTracks(filtered);
-  }, [filtered, setTracks]);
+    setTracks(view);
+  }, [view, setTracks]);
+
+  // Autoscroll: when on, keep the list pinned to the top so freshly-arrived
+  // recordings (which now appear at the top) stay in view. Only nudges when the
+  // count actually grows, so it never fights the user mid-scroll otherwise.
+  const prevCount = useRef(0);
+  useEffect(() => {
+    if (autoscroll && waves.length > prevCount.current) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+    prevCount.current = waves.length;
+  }, [waves, autoscroll]);
+
+  // Track which cards are currently within the viewport (below the sticky
+  // header) and report their time-span as a fraction of the day, so the timeline
+  // can highlight the window the user is looking at. Recomputed on scroll/resize,
+  // throttled to one measurement per frame.
+  useEffect(() => {
+    if (loading || view.length === 0) {
+      setVisibleRange(null);
+      return;
+    }
+    let raf = 0;
+    const compute = () => {
+      raf = 0;
+      const headerH = document.querySelector("header")?.offsetHeight ?? 0;
+      const bottom = window.innerHeight;
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (const w of view) {
+        const el = document.getElementById(`rec-${w._id}`);
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        if (r.bottom < headerH || r.top > bottom) continue;
+        const f = secOfDay(w.date) / 86400;
+        if (f < lo) lo = f;
+        if (f > hi) hi = f;
+      }
+      setVisibleRange(lo <= hi ? [lo, hi] : null);
+    };
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(compute);
+    };
+    compute();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [view, loading]);
 
   // Jump the list to the recording nearest a clicked point on the timeline.
   const handlePickTime = (fraction) => {
     if (filtered.length === 0) return;
     const targetSec = fraction * 86400;
-    const secOfDay = (d) => {
-      const x = new Date(d);
-      return x.getHours() * 3600 + x.getMinutes() * 60 + x.getSeconds();
-    };
     const match =
       filtered.find((w) => secOfDay(w.date) >= targetSec) ?? filtered[filtered.length - 1];
     const el = document.getElementById(`rec-${match._id}`);
@@ -154,9 +214,17 @@ function Dashboard() {
         onFreqChange={setActiveFreq}
         count={filtered.length}
         items={filtered}
+        visibleRange={visibleRange}
         onPickTime={handlePickTime}
         liveOpen={liveOpen}
         onToggleLive={() => setLiveOpen((v) => !v)}
+        autoscroll={autoscroll}
+        onToggleAutoscroll={() =>
+          setAutoscroll((v) => {
+            if (!v) window.scrollTo({ top: 0, behavior: "smooth" });
+            return !v;
+          })
+        }
       />
 
       <main className="mx-auto max-w-5xl px-4 pb-32 pt-6 sm:px-6">
@@ -166,7 +234,7 @@ function Dashboard() {
           <EmptyState hasData={waves.length > 0} />
         ) : (
           <div className="flex flex-col gap-2.5">
-            {filtered.map((item, i) => (
+            {view.map((item, i) => (
               <RecordingCard key={item._id} item={item} index={i} />
             ))}
           </div>
