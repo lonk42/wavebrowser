@@ -43,6 +43,12 @@ services:
       MONGODB_DB: transcriber
       RECORDINGS_DIR: /recordings
       TRANSCRIPTION_KEY: whisper
+      # Color-password gate (see CLAUDE.md). On by default in dev so it's easy to
+      # exercise; the answer is the signal-lime accent #bef24a. Override on the
+      # CLI, e.g.  PASSWORD_GATE_ENABLED=false docker compose -f dev/compose.yaml up
+      PASSWORD_GATE_ENABLED: "${PASSWORD_GATE_ENABLED:-true}"
+      PASSWORD_GATE_COLOR: "${PASSWORD_GATE_COLOR:-#bef24a}"
+      PASSWORD_GATE_MESSAGE: "${PASSWORD_GATE_MESSAGE:-What's the frequency? Match the signal color to tune in.}"
     ports:
       - "${WEB_PORT:-8080}:3000"
     volumes:

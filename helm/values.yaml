@@ -125,6 +125,14 @@ web:
     TRANSCRIPTION_KEY: whisper
     RECORDINGS_DIR: /recordings
     # STREAM_URL is injected by web-deployment.yaml when icecast.enabled.
+    # Color-password gate: a playful wall shown to new visitors who must pick or
+    # type the correct hex color to enter. Validated server-side (the answer
+    # never ships to the browser); a SHA-256 of the color is stored in an
+    # httpOnly cookie. Off by default. PASSWORD_GATE_SECRET (optional) salts the
+    # token hash.
+    PASSWORD_GATE_ENABLED: "false"
+    PASSWORD_GATE_MESSAGE: "Tune to the right frequency — match the signal color to enter."
+    PASSWORD_GATE_COLOR: "#bef24a"
 
 # Internal Icecast server for the live "Listen Live" stream. The sdr pod
 # publishes to it (see the icecast output in sdr.config) and the web pod proxies
