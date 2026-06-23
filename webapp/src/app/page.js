@@ -22,6 +22,7 @@ function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [activeFreq, setActiveFreq] = useState(null);
+  const [liveOpen, setLiveOpen] = useState(false);
 
   // Fetch a day's recordings.
   useEffect(() => {
@@ -93,6 +94,8 @@ function Dashboard() {
         count={filtered.length}
         items={filtered}
         onPickTime={handlePickTime}
+        liveOpen={liveOpen}
+        onToggleLive={() => setLiveOpen((v) => !v)}
       />
 
       <main className="mx-auto max-w-5xl px-4 pb-32 pt-6 sm:px-6">

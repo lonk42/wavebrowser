@@ -6,5 +6,8 @@ metadata:
   labels:
     {{- include "wavebrowser.labels" . | nindent 4 }}
 data:
+  # Rendered through tpl so sdr.config may reference release-derived values
+  # (e.g. the Icecast service name/password). rtl_airband.conf uses single
+  # braces, so only {{ "{{ }}" }} expressions are substituted.
   rtl_airband.conf: |
-    {{- .Values.sdr.config | nindent 4 }}
+    {{- tpl .Values.sdr.config . | nindent 4 }}

@@ -9,9 +9,10 @@ A stack for recording USB-SDR based radio to file, generating transcriptions aga
 
 Three components share a single recordings volume plus a MongoDB:
 
-- **sdr** — `rtlsdr-airband` records radio to MP3 files (config from a ConfigMap).
+- **sdr** — `rtlsdr-airband` records radio to MP3 files (config from a ConfigMap) and publishes a continuous live MP3 to the internal **icecast** server.
 - **transcriber** — a Python service (faster-whisper on GPU) that watches the recordings and writes transcriptions into MongoDB.
-- **web** — a Next.js app that browses the transcriptions and streams the audio.
+- **web** — a Next.js app that browses the transcriptions, streams the recorded audio, and offers a **Listen Live** feed (the icecast stream proxied at `/api/stream`) with a browser-side audio spectrogram.
+- **icecast** — a small internal Icecast server (ClusterIP only) that relays the sdr live stream to the web app.
 
 ## Requirements
 
@@ -34,6 +35,13 @@ helm upgrade --namespace wavebrowser --create-namespace -i wavebrowser wavebrows
 
 MongoDB is provided by the Bitnami subchart by default. To use an existing
 MongoDB, set `mongodb.enabled: false` and `externalMongodb.uri`.
+
+The **Listen Live** feature is on by default (`icecast.enabled`). Change
+`icecast.sourcePassword`/`icecast.adminPassword` from the defaults, and keep the
+icecast output block in `sdr.config` in sync with `icecast.mountpoint`. Set
+`icecast.enabled: false` (and remove the icecast output from `sdr.config`) to
+disable it — the web app's `/api/stream` then returns 503 and the Live panel
+shows as unavailable.
 
 ## Configuration
 

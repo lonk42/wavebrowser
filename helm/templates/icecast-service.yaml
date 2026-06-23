@@ -1,0 +1,22 @@
+{{- if .Values.icecast.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "wavebrowser.fullname" . }}-icecast
+  labels:
+    {{- include "wavebrowser.labels" . | nindent 4 }}
+    app.kubernetes.io/component: icecast
+spec:
+  # ClusterIP only: the stream is reached by the web pod's /api/stream proxy,
+  # never exposed directly to the browser (no ingress route).
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: icecast
+  ports:
+    - name: icecast
+      protocol: TCP
+      port: 8000
+      targetPort: icecast
+{{- end }}

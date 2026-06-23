@@ -56,6 +56,19 @@ sdr:
               include_freq = true;
               dated_subdirectories = true;
               split_on_transmission = true;
+            },
+            # Continuous live stream for the webapp's "Listen Live" feature.
+            # server/password reference the chart's Icecast deployment (rendered
+            # via tpl in sdr-configmap.yaml). Remove this block if icecast.enabled
+            # is false.
+            {
+              type = "icecast";
+              server = "{{ .Release.Name }}-icecast";
+              port = 8000;
+              mountpoint = "live.mp3";
+              name = "wavebrowser-live";
+              username = "source";
+              password = "{{ .Values.icecast.sourcePassword }}";
             }
           );
         }
@@ -94,6 +107,26 @@ web:
   env:
     TRANSCRIPTION_KEY: whisper
     RECORDINGS_DIR: /recordings
+    # STREAM_URL is injected by web-deployment.yaml when icecast.enabled.
+
+# Internal Icecast server for the live "Listen Live" stream. The sdr pod
+# publishes to it (see the icecast output in sdr.config) and the web pod proxies
+# it to the browser via /api/stream. ClusterIP only — never exposed directly.
+icecast:
+  enabled: true
+  image:
+    repository: libretime/icecast
+    tag: "2.4.4"
+    pullPolicy: IfNotPresent
+  # Mountpoint of the live stream (no leading slash). Must match the mountpoint
+  # in sdr.config above.
+  mountpoint: live.mp3
+  # CHANGE ME. Used by both the Icecast server and the sdr icecast output. Like
+  # the rest of sdr.config this lands in a ConfigMap in plaintext; promote to a
+  # Secret if that matters in your environment.
+  sourcePassword: hackme
+  adminPassword: hackme
+  resources: {}
 
 # Self-hosted MongoDB via the Bitnami subchart. Set enabled: false to use an
 # external instance (provide externalMongodb.uri below).

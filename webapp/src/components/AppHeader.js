@@ -1,8 +1,9 @@
 "use client";
-import { Radio } from "lucide-react";
+import { Radio, RadioTower } from "lucide-react";
 import DayPager from "./DayPager";
 import SearchBar from "./SearchBar";
 import DayTimeline from "./DayTimeline";
+import LivePlayer from "./LivePlayer";
 
 export default function AppHeader({
   date,
@@ -15,6 +16,8 @@ export default function AppHeader({
   count,
   items,
   onPickTime,
+  liveOpen,
+  onToggleLive,
 }) {
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-bg/80 backdrop-blur-xl">
@@ -37,8 +40,28 @@ export default function AppHeader({
             </div>
           </div>
 
-          <DayPager date={date} onChange={onDateChange} />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onToggleLive}
+              aria-pressed={liveOpen}
+              className={`flex items-center gap-1.5 rounded-md border px-2.5 py-2 font-mono text-[0.65rem] uppercase tracking-[0.15em] transition-colors ${
+                liveOpen
+                  ? "border-signal/40 bg-signal-soft text-signal"
+                  : "border-line text-muted hover:border-signal/40 hover:text-signal"
+              }`}
+            >
+              <RadioTower className="size-4" />
+              Live
+            </button>
+            <DayPager date={date} onChange={onDateChange} />
+          </div>
         </div>
+
+        {liveOpen && (
+          <div className="mt-4">
+            <LivePlayer />
+          </div>
+        )}
 
         <div className="mt-4">
           <SearchBar

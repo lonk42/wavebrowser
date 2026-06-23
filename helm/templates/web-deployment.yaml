@@ -30,6 +30,11 @@ spec:
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}
+            {{- if .Values.icecast.enabled }}
+            # Internal Icecast URL the /api/stream proxy pulls the live feed from.
+            - name: STREAM_URL
+              value: "http://{{ include "wavebrowser.fullname" . }}-icecast:8000/{{ .Values.icecast.mountpoint }}"
+            {{- end }}
             - name: MONGODB_DB
               value: {{ .Values.mongoDatabase | quote }}
             - name: MONGODB_URI

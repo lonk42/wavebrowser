@@ -8,6 +8,10 @@ export function PlayerProvider({ children }) {
   const [tracks, setTracks] = useState([]);
   const [currentId, setCurrentId] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  // Whether the live stream (LivePlayer) currently holds audio focus. Recorded
+  // playback and the live stream are mutually exclusive: starting one releases
+  // the other.
+  const [liveActive, setLiveActive] = useState(false);
 
   const current = useMemo(
     () => tracks.find((t) => t._id === currentId) ?? null,
@@ -16,6 +20,7 @@ export function PlayerProvider({ children }) {
 
   const playTrack = useCallback(
     (item) => {
+      setLiveActive(false); // recorded playback takes over from the live stream
       if (item._id === currentId) {
         setIsPlaying((p) => !p);
       } else {
@@ -35,6 +40,7 @@ export function PlayerProvider({ children }) {
         if (i === -1) return id;
         const next = tracks[i + delta];
         if (!next) return id;
+        setLiveActive(false);
         setIsPlaying(true);
         return next._id;
       });
@@ -62,6 +68,8 @@ export function PlayerProvider({ children }) {
     currentId,
     isPlaying,
     setIsPlaying,
+    liveActive,
+    setLiveActive,
     playTrack,
     toggle,
     next,

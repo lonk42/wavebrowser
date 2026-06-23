@@ -1,0 +1,49 @@
+{{- if .Values.icecast.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "wavebrowser.fullname" . }}-icecast
+  labels:
+    {{- include "wavebrowser.labels" . | nindent 4 }}
+    app.kubernetes.io/component: icecast
+spec:
+  replicas: 1
+  # A single Icecast source mountpoint; never run two at once.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: icecast
+  template:
+    metadata:
+      labels:
+        {{- include "wavebrowser.labels" . | nindent 8 }}
+        app.kubernetes.io/component: icecast
+    spec:
+      containers:
+        - name: icecast
+          image: "{{ .Values.icecast.image.repository }}:{{ .Values.icecast.image.tag }}"
+          imagePullPolicy: {{ .Values.icecast.image.pullPolicy }}
+          ports:
+            - name: icecast
+              containerPort: 8000
+          env:
+            # The sdr pod publishes the live stream with the source password.
+            - name: ICECAST_SOURCE_PASSWORD
+              value: {{ .Values.icecast.sourcePassword | quote }}
+            - name: ICECAST_RELAY_PASSWORD
+              value: {{ .Values.icecast.sourcePassword | quote }}
+            - name: ICECAST_ADMIN_PASSWORD
+              value: {{ .Values.icecast.adminPassword | quote }}
+            - name: ICECAST_HOSTNAME
+              value: {{ include "wavebrowser.fullname" . }}-icecast
+          readinessProbe:
+            tcpSocket:
+              port: icecast
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.icecast.resources | nindent 12 }}
+{{- end }}
