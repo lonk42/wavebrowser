@@ -114,6 +114,11 @@ transcriber:
     # Delete recordings that transcribe to nothing (silence/static blips) so
     # they don't accumulate on the shared volume. Set "false" to keep them.
     PRUNE_EMPTY: "true"
+    # Safety-net rescan interval (seconds). The inotify watcher can silently go
+    # deaf (e.g. event-queue overflow during a burst), so the transcriber also
+    # periodically reconciles the recordings dir and picks up anything the
+    # watcher missed. Set "0" to rely on inotify alone.
+    SWEEP_INTERVAL: "300"
 
 web:
   replicas: 1
