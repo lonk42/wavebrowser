@@ -60,6 +60,18 @@ export default function NowPlayingBar() {
 
       ws = WaveSurfer.create({
         container: containerRef.current,
+        // Play from the Web Audio-decoded buffer rather than an <audio> element.
+        // The waveform is always rendered from the decoded buffer, but with the
+        // default MediaElement backend getDuration() returns the media element's
+        // duration. rtlsdr-airband MP3s have no Xing/Info header, so the browser
+        // estimates that duration from bytes/bitrate — a finite-but-wrong value
+        // that disagrees with the decoded length. The duration readout would then
+        // be off and the progress cursor (currentTime / getDuration) would drift
+        // off the waveform and finish early/late. WebAudio makes the decoded
+        // buffer the single source of truth for duration, cursor, and playback,
+        // and uses the same lenient decoder as the waveform (HTMLMediaElement is
+        // the strict decoder these malformed files trip up).
+        backend: "WebAudio",
         height: 40,
         waveColor: "#5b6170",
         progressColor: "#bef24a",

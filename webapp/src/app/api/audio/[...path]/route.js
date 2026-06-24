@@ -17,6 +17,12 @@ function trimToFirstFrame(buf) {
   if (buf.length >= 3 && buf[0] === 0x49 && buf[1] === 0x44 && buf[2] === 0x33) {
     return buf
   }
+  // Not an MP3 at all (e.g. a RIFF/WAVE file, as used by the dev seed): the
+  // frame-sync scan below would false-match a 0xFFEx byte pair inside PCM data
+  // and strip the real header. Only MP3s need trimming, so leave it untouched.
+  if (buf.length >= 4 && buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46) {
+    return buf
+  }
   // Scan for the first MPEG audio frame sync: 11 set bits (0xFF, then top 3
   // bits of the next byte set: 0xE0 mask).
   for (let i = 0; i + 1 < buf.length; i++) {
