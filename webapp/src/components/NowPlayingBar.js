@@ -39,6 +39,12 @@ export default function NowPlayingBar() {
   // The most recent play position, used to tell a genuine end-of-track from a
   // spurious "finish" a freshly-loaded track can emit before it plays.
   const lastTimeRef = useRef(0);
+  // Id of the track currently loaded, plus the id we last auto-advanced from, so
+  // a single track can only trigger one advance even if wavesurfer emits
+  // "finish" more than once for it. Reset whenever a new track loads.
+  const currentIdRef = useRef(current?._id ?? null);
+  currentIdRef.current = current?._id ?? null;
+  const advancedFromRef = useRef(null);
 
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -81,13 +87,17 @@ export default function NowPlayingBar() {
       ws.on("play", () => setIsPlaying(true));
       ws.on("pause", () => setIsPlaying(false));
       ws.on("finish", () => {
-        // wavesurfer can emit a "finish" immediately after a new track loads
-        // (before it has actually played), which would advance again and skip
-        // an item. Only treat it as a real end-of-track when the play head
-        // actually reached the end — a freshly-loaded track's last reported
-        // time is ~0, far from its duration.
+        // Two ways wavesurfer can emit a stray "finish" that double-advances and
+        // skips a track; guard against both:
+        //  1. A freshly-loaded track fires "finish" before it has played — its
+        //     last reported time is ~0, far from the duration, so ignore it.
         const dur = ws.getDuration();
         if (dur && lastTimeRef.current < dur - 0.5) return;
+        //  2. The same track fires "finish" more than once (back-to-back, before
+        //     the next track loads). Only advance once per track id.
+        const id = currentIdRef.current;
+        if (id != null && advancedFromRef.current === id) return;
+        advancedFromRef.current = id;
         if (navRef.current.hasNext) navRef.current.next();
         else setIsPlaying(false);
       });
@@ -113,6 +123,7 @@ export default function NowPlayingBar() {
     if (!ws || !current) return;
     readyRef.current = false;
     lastTimeRef.current = 0;
+    advancedFromRef.current = null;
     setCurrentTime(0);
     setDuration(0);
     ws.load(current.audioUrl).catch(() => {});
