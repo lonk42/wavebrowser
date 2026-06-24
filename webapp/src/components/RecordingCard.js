@@ -15,7 +15,7 @@ const fmtDuration = (s) => {
   return `${m}:${String(r).padStart(2, "0")}`;
 };
 
-export default function RecordingCard({ item, index }) {
+export default function RecordingCard({ item, index, isNew }) {
   const { currentId, isPlaying, playTrack } = usePlayer();
   const isActive = currentId === item._id;
   const isThisPlaying = isActive && isPlaying;
@@ -26,8 +26,12 @@ export default function RecordingCard({ item, index }) {
       type="button"
       id={`rec-${item._id}`}
       onClick={() => playTrack(item)}
-      style={{ animationDelay: `${Math.min(index, 12) * 40}ms` }}
-      className={`animate-reveal group flex w-full scroll-mt-44 items-stretch gap-4 rounded-xl border p-3 text-left transition-all duration-200 sm:gap-5 sm:p-4 ${
+      // Live arrivals slide in on their own; only the initial load batch uses
+      // the index-based staggered reveal.
+      style={isNew ? undefined : { animationDelay: `${Math.min(index, 12) * 40}ms` }}
+      className={`${
+        isNew ? "animate-slide-in" : "animate-reveal"
+      } group flex w-full scroll-mt-44 items-stretch gap-4 rounded-xl border p-3 text-left transition-all duration-200 sm:gap-5 sm:p-4 ${
         isActive
           ? "border-signal/40 bg-elevated shadow-[0_0_30px_-12px_var(--color-signal)]"
           : "border-line bg-surface hover:border-line-strong hover:bg-elevated"

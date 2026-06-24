@@ -36,6 +36,9 @@ export default function NowPlayingBar() {
   // Whether playback is intended, reachable from stable wavesurfer events.
   const shouldPlayRef = useRef(isPlaying);
   shouldPlayRef.current = isPlaying;
+  // The most recent play position, used to tell a genuine end-of-track from a
+  // spurious "finish" a freshly-loaded track can emit before it plays.
+  const lastTimeRef = useRef(0);
 
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -71,10 +74,20 @@ export default function NowPlayingBar() {
         ws.setTime(0);
         if (shouldPlayRef.current) ws.play().catch(() => {});
       });
-      ws.on("timeupdate", (t) => setCurrentTime(t));
+      ws.on("timeupdate", (t) => {
+        lastTimeRef.current = t;
+        setCurrentTime(t);
+      });
       ws.on("play", () => setIsPlaying(true));
       ws.on("pause", () => setIsPlaying(false));
       ws.on("finish", () => {
+        // wavesurfer can emit a "finish" immediately after a new track loads
+        // (before it has actually played), which would advance again and skip
+        // an item. Only treat it as a real end-of-track when the play head
+        // actually reached the end — a freshly-loaded track's last reported
+        // time is ~0, far from its duration.
+        const dur = ws.getDuration();
+        if (dur && lastTimeRef.current < dur - 0.5) return;
         if (navRef.current.hasNext) navRef.current.next();
         else setIsPlaying(false);
       });
@@ -99,6 +112,7 @@ export default function NowPlayingBar() {
     const ws = wsRef.current;
     if (!ws || !current) return;
     readyRef.current = false;
+    lastTimeRef.current = 0;
     setCurrentTime(0);
     setDuration(0);
     ws.load(current.audioUrl).catch(() => {});

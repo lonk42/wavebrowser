@@ -84,6 +84,29 @@
   animation: reveal 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* Pronounced slide-in for a transmission that arrives live (newest-first, so it
+   drops in from the top) with a brief signal-colored flash to catch the eye. */
+@keyframes slide-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-22px) scale(0.985);
+    box-shadow: 0 0 24px -6px var(--color-signal);
+    border-color: var(--color-signal);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 /* Live pulse for the active/playing indicator */
 @keyframes pulse-signal {
   0%, 100% {
@@ -132,6 +155,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .animate-reveal,
+  .animate-slide-in,
   .animate-pulse-signal,
   .animate-shake,
   .eq-bar {

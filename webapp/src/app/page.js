@@ -31,6 +31,12 @@ function Dashboard() {
   // [startFraction, endFraction] of the day currently within the viewport, used
   // to draw the "you are here" window on the timeline. null when nothing's shown.
   const [visibleRange, setVisibleRange] = useState(null);
+  // Ids of recordings that arrived *live* (via SSE) rather than in the initial
+  // day load, so their cards can slide in instead of using the load-time
+  // staggered reveal. `seenIds` is the dedup source of truth across the fetch
+  // and the live merges.
+  const [recentIds, setRecentIds] = useState(() => new Set());
+  const seenIdsRef = useRef(new Set());
 
   // Fetch a day's recordings, then — while viewing the current day — subscribe
   // to a live SSE stream so new transcriptions appear within ~1s of being
@@ -49,41 +55,46 @@ function Dashboard() {
     const url = `/api?start=${start.toISOString()}&end=${end.toISOString()}`;
 
     // Merge live items into the day, keyed by _id so existing cards and the
-    // now-playing track are untouched and new ones slot in by time. Returns the
-    // same array reference when nothing changed, to avoid a needless re-render.
+    // now-playing track are untouched and new ones slot in by time. Items not
+    // already seen (this fetch or a prior merge) are the ones to animate in.
     const mergeIntoDay = (incoming) => {
-      const fresh = incoming.filter((it) => {
+      const added = incoming.filter((it) => {
         const t = new Date(it.date);
-        return t >= start && t < end;
+        return t >= start && t < end && !seenIdsRef.current.has(it._id);
       });
-      if (fresh.length === 0) return;
+      if (added.length === 0) return;
+      for (const it of added) seenIdsRef.current.add(it._id);
       setWaves((prev) => {
         const byId = new Map(prev.map((w) => [w._id, w]));
-        let changed = false;
-        for (const it of fresh) {
-          if (!byId.has(it._id)) {
-            byId.set(it._id, it);
-            changed = true;
-          }
-        }
-        if (!changed) return prev;
+        for (const it of added) byId.set(it._id, it);
         return [...byId.values()].sort(
           (a, b) => new Date(a.date) - new Date(b.date)
         );
       });
+      setRecentIds((prev) => {
+        const next = new Set(prev);
+        for (const it of added) next.add(it._id);
+        return next;
+      });
     };
 
-    // New day selected: show the skeleton and reset filters. Live merges only
-    // touch the data, so active search/frequency filters survive.
+    // New day selected: show the skeleton and reset filters and the
+    // seen/recent tracking. Live merges only touch the data, so active
+    // search/frequency filters survive.
     setLoading(true);
     setActiveFreq(null);
     setQuery("");
+    seenIdsRef.current = new Set();
+    setRecentIds(new Set());
 
     (async () => {
       try {
         const res = await fetch(url, { cache: "no-store" });
         const result = await res.json();
-        if (!cancelled && Array.isArray(result)) setWaves(result);
+        if (!cancelled && Array.isArray(result)) {
+          for (const r of result) seenIdsRef.current.add(r._id);
+          setWaves(result);
+        }
       } catch {
         if (!cancelled) setWaves([]);
       } finally {
@@ -148,6 +159,23 @@ function Dashboard() {
     }
     prevCount.current = waves.length;
   }, [waves, autoscroll]);
+
+  // Auto-following disengages as soon as the user scrolls down, away from the
+  // top, so the "Auto" button reflects whether the list is actually pinned.
+  // Only a downward scroll counts: the programmatic snap-to-top (and a manual
+  // scroll-up) moves toward the top and must not turn following off.
+  const lastYRef = useRef(0);
+  useEffect(() => {
+    if (!autoscroll) return;
+    lastYRef.current = window.scrollY;
+    const onScroll = () => {
+      const y = window.scrollY;
+      if (y > lastYRef.current + 4 && y > 8) setAutoscroll(false);
+      lastYRef.current = y;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [autoscroll]);
 
   // Track which cards are currently within the viewport (below the sticky
   // header) and report their time-span as a fraction of the day, so the timeline
@@ -235,7 +263,12 @@ function Dashboard() {
         ) : (
           <div className="flex flex-col gap-2.5">
             {view.map((item, i) => (
-              <RecordingCard key={item._id} item={item} index={i} />
+              <RecordingCard
+                key={item._id}
+                item={item}
+                index={i}
+                isNew={recentIds.has(item._id)}
+              />
             ))}
           </div>
         )}
