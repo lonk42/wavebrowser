@@ -67,6 +67,7 @@ export async function GET(request) {
             date: doc.date,
             frequency_hz: doc.frequency_hz,
             duration: doc.duration ?? null,
+            peaks: doc.peaks ?? null,
             transcription: doc.transcriptions?.[TRANSCRIPTION_KEY]?.transcription ?? '',
             audioUrl: `/api/audio/${doc.rel_path}`,
           }))

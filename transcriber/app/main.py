@@ -22,8 +22,11 @@ from datetime import datetime, timezone
 
 import pymongo
 from faster_whisper import WhisperModel
+from faster_whisper.audio import decode_audio
 from watchdog.observers import Observer
 from watchdog.events import PatternMatchingEventHandler
+
+from peaks import compute_peaks
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
@@ -354,7 +357,7 @@ class RecordingProcessor:
             return
 
         log.info("Transcribing %s", rel_path)
-        text, info = self._run_whisper(path)
+        text, info, peaks = self._run_whisper(path)
 
         # Empty result (silence/blips): never creates a card. Prune the file if
         # configured, otherwise just leave it untranscribed on disk.
@@ -375,6 +378,9 @@ class RecordingProcessor:
                     "frequency_hz": frequency_hz,
                     # Audio length in seconds, from whisper's probe of the file.
                     "duration": round(float(info.duration), 1),
+                    # Downsampled waveform envelope (0..1) the web GUI draws as a
+                    # faint background behind each card. Empty for silent clips.
+                    "peaks": peaks,
                 },
                 "$set": {
                     f"transcriptions.{self.config.transcription_key}": {
@@ -419,8 +425,13 @@ class RecordingProcessor:
             return path.name
 
     def _run_whisper(self, path):
+        # Decode the clip once (faster-whisper's own decoder) so we can both feed
+        # the samples to the model and derive the waveform peaks the web GUI draws
+        # behind each card - no second decode pass.
+        samples = decode_audio(str(path))
+        peaks = compute_peaks(samples)
         segments, info = self.model.transcribe(
-            str(path),
+            samples,
             language=self.config.whisper_language,
             beam_size=self.config.whisper_beam_size,
             initial_prompt=self.config.whisper_initial_prompt,
@@ -436,7 +447,7 @@ class RecordingProcessor:
             compression_ratio_threshold=2.4,
         )
         text = " ".join(segment.text.strip() for segment in segments).strip()
-        return text, info
+        return text, info, peaks
 
 
 if __name__ == "__main__":

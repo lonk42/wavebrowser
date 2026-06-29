@@ -2,6 +2,7 @@
 import { format } from "date-fns";
 import { Play, Pause } from "lucide-react";
 import { usePlayer } from "@/context/PlayerContext";
+import CardWaveform from "@/components/CardWaveform";
 
 const mhz = (hz) => (Number(hz) / 1e6).toFixed(3);
 
@@ -31,12 +32,22 @@ export default function RecordingCard({ item, index, isNew }) {
       style={isNew ? undefined : { animationDelay: `${Math.min(index, 12) * 40}ms` }}
       className={`${
         isNew ? "animate-slide-in" : "animate-reveal"
-      } group flex w-full scroll-mt-44 items-stretch gap-4 rounded-xl border p-3 text-left transition-all duration-200 sm:gap-5 sm:p-4 ${
+      } group relative isolate flex w-full scroll-mt-44 items-stretch gap-4 overflow-hidden rounded-xl border p-3 text-left transition-all duration-200 sm:gap-5 sm:p-4 ${
         isActive
           ? "border-signal/40 bg-elevated shadow-[0_0_30px_-12px_var(--color-signal)]"
           : "border-line bg-surface hover:border-line-strong hover:bg-elevated"
       }`}
     >
+      {/* Faint full-bleed waveform behind the card content. Brighter on the
+          active/playing card; renders nothing for docs without stored peaks. */}
+      <span
+        className={`-z-10 transition-colors duration-200 ${
+          isActive ? "text-signal opacity-20" : "text-muted opacity-[0.10]"
+        }`}
+      >
+        <CardWaveform peaks={item.peaks} />
+      </span>
+
       {/* Play / pause */}
       <span
         className={`grid size-11 shrink-0 self-center place-items-center rounded-full border transition-colors ${

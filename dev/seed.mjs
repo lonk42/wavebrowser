@@ -65,6 +65,26 @@ function makeWav(durationSec) {
   return Buffer.concat([header, data]);
 }
 
+// Synthetic 0..1 waveform envelope so the card's background waveform is visible
+// in the dev stack (the real field is computed by the transcriber from audio).
+function makePeaks(n = 100) {
+  const peaks = [];
+  let i = 0;
+  while (i < n) {
+    if (Math.random() < 0.6) {
+      const burst = Math.floor(3 + Math.random() * 10);
+      const amp = 0.4 + Math.random() * 0.6;
+      for (let j = 0; j < burst && i < n; j++, i++) {
+        peaks.push(Number((amp * Math.sin((Math.PI * j) / burst)).toFixed(3)));
+      }
+    } else {
+      const gap = Math.floor(2 + Math.random() * 5);
+      for (let j = 0; j < gap && i < n; j++, i++) peaks.push(Number((Math.random() * 0.05).toFixed(3)));
+    }
+  }
+  return peaks;
+}
+
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const pad = (x) => String(x).padStart(2, "0");
 
@@ -94,18 +114,21 @@ async function main() {
       const date = new Date(day);
       date.setUTCHours(Math.floor(Math.random() * 24), Math.floor(Math.random() * 60), Math.floor(Math.random() * 60));
       const freq = pick(FREQS);
+      const duration = Number((2 + Math.random() * 6).toFixed(1));
       const stamp = `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}_${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}`;
       const filename = `r__${stamp}_${freq}.wav`;
       const relPath = `${dayDir}/${filename}`;
 
       await mkdir(path.join(RECORDINGS_DIR, dayDir), { recursive: true });
-      await writeFile(path.join(RECORDINGS_DIR, relPath), makeWav(2 + Math.random() * 6));
+      await writeFile(path.join(RECORDINGS_DIR, relPath), makeWav(duration));
 
       docs.push({
         filename,
         rel_path: relPath,
         date,
         frequency_hz: String(freq),
+        duration,
+        peaks: makePeaks(),
         transcriptions: {
           [KEY]: { transcription: pick(PHRASES), model: "dev-seed", language: "en", date: new Date() },
         },
