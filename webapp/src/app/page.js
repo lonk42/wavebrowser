@@ -141,13 +141,16 @@ function Dashboard() {
   }, [waves, query, activeFreq]);
 
   // Display newest-first. `filtered` stays chronological (used by the timeline's
-  // pick logic); `view` is what the list renders and the player navigates.
+  // pick logic); `view` is the reversed list the card list renders.
   const view = useMemo(() => [...filtered].reverse(), [filtered]);
 
-  // The player navigates whatever is currently visible, in display order.
+  // The player navigates the chronological list, not the reversed display order,
+  // so next()/auto-advance move *forward in time* (older -> newer). With the
+  // newest-first `view` the player stepped backwards in time instead. Navigation
+  // is keyed by id + index, so the order it sees is independent of render order.
   useEffect(() => {
-    setTracks(view);
-  }, [view, setTracks]);
+    setTracks(filtered);
+  }, [filtered, setTracks]);
 
   // Autoscroll: when on, keep the list pinned to the top so freshly-arrived
   // recordings (which now appear at the top) stay in view. Only nudges when the

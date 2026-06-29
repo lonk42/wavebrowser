@@ -46,7 +46,6 @@ spec:
           volumeMounts:
             - name: recordings
               mountPath: {{ .Values.transcriber.env.RECORDINGS_DIR | default "/recordings" }}
-              readOnly: true
             - name: model-cache
               mountPath: /root/.cache/huggingface
           resources:

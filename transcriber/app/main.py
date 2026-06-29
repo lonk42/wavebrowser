@@ -13,6 +13,7 @@ import os
 import re
 import sys
 import time
+import queue
 import signal
 import logging
 import threading
@@ -62,6 +63,23 @@ class Config:
         # watcher missed. Set 0 to disable and rely on inotify alone.
         self.sweep_interval = int(os.environ.get("SWEEP_INTERVAL", "300"))
 
+        # The sweep only needs to re-examine recently-written directories: the
+        # watcher covers live writes and the startup scan covers the full
+        # backlog, so steady-state reconciliation just backstops the recent
+        # window where a dropped event could hide. Re-walking the entire,
+        # ever-growing tree every interval is the part that does not scale.
+        # Window is in seconds, compared against each directory's mtime (a write
+        # bumps the containing dir's mtime). 0 scans the whole tree (legacy).
+        self.sweep_window = int(os.environ.get("SWEEP_WINDOW", str(2 * 86400)))
+
+        # _seen dedup entries are evicted once a file can no longer reappear in
+        # the windowed sweep, bounding memory on a long-lived pod. The entry
+        # must outlive the file's re-scannable period: a file's directory stays
+        # in-window until ~a day after the file (end of its day) plus
+        # SWEEP_WINDOW, so window + 2 days of margin is always safe. 0 (window
+        # disabled) keeps entries for the whole process lifetime, as before.
+        self.seen_ttl = self.sweep_window + 2 * 86400 if self.sweep_window else 0
+
         # Key the transcription is stored under in transcriptions.<key>. Kept
         # generic so the web app does not hard-code an engine name.
         self.transcription_key = os.environ.get("TRANSCRIPTION_KEY", "whisper")
@@ -99,25 +117,47 @@ class RecordingProcessor:
 
         self._observer = None
         self._stop = False
-        # rel_paths already handled this process lifetime. Lets the sweep skip
+        # rel_path -> monotonic timestamp it was claimed. Lets the sweep skip
         # work the watcher (or an earlier sweep) already did - including empty
-        # blips that leave no MongoDB document to dedupe against. Guarded because
-        # the watcher callbacks and the sweep run on different threads.
-        self._seen = set()
+        # blips that leave no MongoDB document to dedupe against. Entries age out
+        # (see Config.seen_ttl) so this stays bounded on a long-lived pod.
+        # Guarded because the watcher callbacks and the sweep run on different
+        # threads.
+        self._seen = {}
         self._seen_lock = threading.Lock()
+
+        # Transcription runs on a single worker thread draining this queue, NOT
+        # inline on the watcher's dispatch thread. faster-whisper takes hundreds
+        # of ms per clip; doing that inside the inotify callback stalls the
+        # observer's event reader, the kernel's fixed-size inotify queue
+        # (fs.inotify.max_queued_events) overflows during any burst, and the
+        # watch goes permanently deaf. Enqueueing keeps the consumer instant.
+        self._queue = queue.Queue()
+
+        # Liveness signal for the inotify observer: every delivered event bumps
+        # this. The sweep reads and zeroes it each interval to decide whether the
+        # observer has gone deaf and needs restarting. Separate lock so a busy
+        # worker holding _seen_lock never blocks the watcher callback.
+        self._watch_events = 0
+        self._watch_lock = threading.Lock()
+        self._restart_count = 0
 
     def run(self):
         """Process the existing backlog, then watch for new files forever."""
+        worker = threading.Thread(
+            target=self._worker, name="transcribe-worker", daemon=True
+        )
+        worker.start()
         self._start_watching()
 
         log.info("Scanning existing recordings under %s", self.config.recordings_dir)
         for path in sorted(self.config.recordings_dir.rglob("*.mp3")):
-            self._safe_transcribe(path)
+            self._enqueue(path)
 
         signal.signal(signal.SIGTERM, self._handle_signal)
         signal.signal(signal.SIGINT, self._handle_signal)
 
-        log.info("Backlog complete, watching for new recordings")
+        log.info("Backlog queued, watching for new recordings")
         last_sweep = time.monotonic()
         while not self._stop:
             time.sleep(1)
@@ -130,6 +170,8 @@ class RecordingProcessor:
         if self._observer is not None:
             self._observer.stop()
             self._observer.join()
+        self._queue.put(None)  # unblock the worker so it can exit
+        worker.join(timeout=30)
         log.info("Shutting down")
 
     def _handle_signal(self, signum, _frame):
@@ -140,44 +182,140 @@ class RecordingProcessor:
         handler = PatternMatchingEventHandler(
             patterns=["*.mp3"], ignore_directories=True, case_sensitive=False
         )
-        handler.on_created = lambda event: self._safe_transcribe(Path(event.src_path))
+        handler.on_created = self._on_created
         # Keep MongoDB in sync when a recording is removed from disk (manual
         # cleanup, retention job, or our own empty-blip pruning).
-        handler.on_deleted = lambda event: self._safe_handle_delete(Path(event.src_path))
-        self._observer = Observer()
-        self._observer.schedule(handler, str(self.config.recordings_dir), recursive=True)
-        self._observer.start()
+        handler.on_deleted = self._on_deleted
+        observer = Observer()
+        observer.schedule(handler, str(self.config.recordings_dir), recursive=True)
+        observer.start()
+        self._observer = observer
 
-    def _safe_transcribe(self, path):
+    def _on_created(self, event):
+        self._note_watch_event()
+        self._enqueue(Path(event.src_path))
+
+    def _on_deleted(self, event):
+        self._note_watch_event()
+        self._safe_handle_delete(Path(event.src_path))
+
+    def _note_watch_event(self):
+        """Record that the observer delivered an event (it is still alive)."""
+        with self._watch_lock:
+            self._watch_events += 1
+
+    def _restart_watcher(self):
+        """Tear down and recreate a deaf observer so inotify resumes.
+
+        Start the replacement before stopping the old one so the watch gap is
+        minimal; the sweep covers anything created during the swap anyway."""
+        old = self._observer
+        try:
+            self._start_watching()
+        except Exception:
+            log.exception("Failed to restart inotify observer")
+            return
+        if old is not None:
+            try:
+                old.stop()
+                old.join(timeout=10)
+            except Exception:
+                log.exception("Error stopping the old inotify observer")
+        self._restart_count += 1
+        log.info("inotify observer restarted (restart #%d)", self._restart_count)
+
+    def _enqueue(self, path):
+        """Claim a file and hand it to the worker for transcription.
+
+        Claiming (the seen-set) here, not in the worker, means a file is queued
+        at most once even when the watcher and a sweep both surface it."""
         path = Path(path)
         rel_path = self._relative_path(path)
-        # Claim the file before doing any work so a concurrent watcher event and
-        # sweep can't both process it.
         with self._seen_lock:
             if rel_path in self._seen:
                 return
-            self._seen.add(rel_path)
-        try:
-            self.transcribe(path)
-        except Exception:
-            log.exception("Transcription failed for %s", path)
-            # Unclaim so a later sweep retries a transient failure.
-            with self._seen_lock:
-                self._seen.discard(rel_path)
+            self._seen[rel_path] = time.monotonic()
+        self._queue.put((path, rel_path))
+
+    def _worker(self):
+        """Drain the queue, transcribing one clip at a time off the watcher thread."""
+        while True:
+            item = self._queue.get()
+            try:
+                if item is None:  # shutdown sentinel
+                    return
+                path, rel_path = item
+                try:
+                    self.transcribe(path)
+                except Exception:
+                    log.exception("Transcription failed for %s", path)
+                    # Unclaim so a later sweep retries a transient failure.
+                    with self._seen_lock:
+                        self._seen.pop(rel_path, None)
+            finally:
+                self._queue.task_done()
+
+    def _scan_mp3s(self):
+        """List *.mp3 files the sweep should reconcile.
+
+        With SWEEP_WINDOW set, only files in directories whose mtime is within
+        the window are returned, so the cost tracks recent activity rather than
+        the whole (ever-growing) history - the watcher covers live writes and
+        the startup backlog scan covers everything else. A write bumps the
+        containing directory's mtime, so a file a deaf watcher missed is in a
+        recent directory and still surfaces here. Window 0 scans the full tree."""
+        root = self.config.recordings_dir
+        if not self.config.sweep_window:
+            return sorted(root.rglob("*.mp3"))
+        cutoff = time.time() - self.config.sweep_window
+        out = []
+        for dirpath, _dirnames, filenames in os.walk(root):
+            try:
+                # Only collect files from recently-touched directories; we still
+                # descend everywhere so recent leaves under an older parent
+                # (e.g. just after a day/month rollover) are not skipped.
+                if os.stat(dirpath).st_mtime < cutoff:
+                    continue
+            except OSError:
+                continue
+            for name in filenames:
+                if name.lower().endswith(".mp3"):
+                    out.append(Path(dirpath) / name)
+        return sorted(out)
+
+    def _evict_seen(self):
+        """Drop dedup entries old enough that the file can no longer reappear in
+        the windowed sweep, bounding _seen on a long-lived pod. Holds no lock of
+        its own - the caller already holds _seen_lock."""
+        if not self.config.seen_ttl:
+            return
+        cutoff = time.monotonic() - self.config.seen_ttl
+        for rel_path in [k for k, ts in self._seen.items() if ts < cutoff]:
+            del self._seen[rel_path]
 
     def _sweep(self):
         """Reconcile the recordings directory against what we've processed.
 
         Safety net for a silently-deaf inotify observer: any *.mp3 the watcher
-        never delivered is picked up here. transcribe() and the seen-set keep
-        this idempotent, so already-handled files cost only a set lookup."""
+        never delivered is queued here. transcribe() and the seen-map keep this
+        idempotent, so already-handled files cost only a dict lookup. The sweep
+        also health-checks the observer: if recordings appeared this interval
+        but the watcher delivered no events, it has gone deaf (typically an
+        inotify queue overflow) and is restarted so it resumes as the
+        low-latency path - the sweep alone already kept ingestion correct."""
         try:
-            paths = sorted(self.config.recordings_dir.rglob("*.mp3"))
+            paths = self._scan_mp3s()
         except OSError:
             log.exception("Sweep failed to scan %s", self.config.recordings_dir)
             return
         with self._seen_lock:
             missed = [p for p in paths if self._relative_path(p) not in self._seen]
+            self._evict_seen()
+        # Read and reset the observer's liveness counter for this interval.
+        with self._watch_lock:
+            events = self._watch_events
+            self._watch_events = 0
+
         if missed:
             log.warning(
                 "Sweep found %d recording(s) the watcher missed; processing", len(missed)
@@ -185,7 +323,15 @@ class RecordingProcessor:
             for path in missed:
                 if self._stop:
                     break
-                self._safe_transcribe(path)
+                self._enqueue(path)
+
+        # Files appeared but the watcher reported nothing all interval -> deaf.
+        if missed and events == 0:
+            log.error(
+                "inotify observer is deaf (%d recording(s) missed, 0 events "
+                "delivered this interval); restarting it", len(missed)
+            )
+            self._restart_watcher()
 
     def transcribe(self, path):
         path = Path(path)
