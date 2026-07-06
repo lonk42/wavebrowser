@@ -14,13 +14,15 @@ const secOfDay = (d) => {
 export default function DayTimeline({ items, visibleRange, onPick }) {
   const { current } = usePlayer();
 
-  const { counts, max } = useMemo(() => {
+  const { counts, starCounts, max } = useMemo(() => {
     const counts = new Array(BINS).fill(0);
+    const starCounts = new Array(BINS).fill(0);
     for (const it of items) {
       const bin = Math.min(BINS - 1, Math.floor((secOfDay(it.date) / 86400) * BINS));
       counts[bin]++;
+      if (it.bookmarked) starCounts[bin]++;
     }
-    return { counts, max: Math.max(1, ...counts) };
+    return { counts, starCounts, max: Math.max(1, ...counts) };
   }, [items]);
 
   const activeFrac = current ? secOfDay(current.date) / 86400 : null;
@@ -66,13 +68,24 @@ export default function DayTimeline({ items, visibleRange, onPick }) {
           {counts.map((c, i) => (
             <div
               key={i}
-              className="flex-1 rounded-sm transition-colors"
+              className="relative flex-1 overflow-hidden rounded-sm transition-colors"
               style={{
                 height: c ? `${Math.max(12, (c / max) * 100)}%` : "2px",
                 backgroundColor: c ? "var(--color-signal)" : "var(--color-line)",
                 opacity: c ? 0.55 + 0.45 * (c / max) : 1,
               }}
-            />
+            >
+              {/* Bookmarked share of this bucket, filled gold from the baseline */}
+              {starCounts[i] > 0 && (
+                <div
+                  className="absolute inset-x-0 bottom-0"
+                  style={{
+                    height: `${(starCounts[i] / c) * 100}%`,
+                    backgroundColor: "var(--color-star)",
+                  }}
+                />
+              )}
+            </div>
           ))}
         </div>
 

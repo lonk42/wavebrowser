@@ -17,6 +17,10 @@
   --color-signal: #bef24a;
   --color-signal-soft: rgba(190, 242, 74, 0.14);
 
+  /* Bookmark / star accent — the only non-lime accent, reserved for saved items */
+  --color-star: #facc15;
+  --color-star-soft: rgba(250, 204, 21, 0.14);
+
   /* Type — distinctive, domain-appropriate */
   --font-display: var(--font-bricolage), ui-sans-serif, sans-serif;
   --font-sans: var(--font-hanken), ui-sans-serif, sans-serif;
@@ -121,6 +125,21 @@
   animation: pulse-signal 1.6s ease-in-out infinite;
 }
 
+/* One-shot highlight when a card is jumped to via a deep link (?focus=<id>) */
+@keyframes focus-flash {
+  0%, 100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  15% {
+    box-shadow: 0 0 0 2px var(--color-signal), 0 0 26px -4px var(--color-signal);
+  }
+}
+
+.animate-focus-flash {
+  border-radius: 0.75rem;
+  animation: focus-flash 2s ease-in-out;
+}
+
 /* Tiny equalizer used on the active card */
 @keyframes eq {
   0%, 100% {
@@ -157,6 +176,7 @@
   .animate-reveal,
   .animate-slide-in,
   .animate-pulse-signal,
+  .animate-focus-flash,
   .animate-shake,
   .eq-bar {
     animation: none;

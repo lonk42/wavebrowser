@@ -37,6 +37,28 @@ function Dashboard() {
   // and the live merges.
   const [recentIds, setRecentIds] = useState(() => new Set());
   const seenIdsRef = useRef(new Set());
+  // A recording id to scroll to once its day is loaded, read from a deep link
+  // (?date=YYYYMMDD&focus=<id>) opened from the Bookmarks page. Consumed once.
+  const focusIdRef = useRef(null);
+  const didInitFromUrl = useRef(false);
+
+  // Read the deep-link params on mount only (client-side, so no SSR/hydration
+  // mismatch). Selecting the target day re-runs the day fetch below.
+  useEffect(() => {
+    if (didInitFromUrl.current) return;
+    didInitFromUrl.current = true;
+    const p = new URLSearchParams(window.location.search);
+    const focus = p.get("focus");
+    const d = p.get("date");
+    if (focus) {
+      focusIdRef.current = focus;
+      setAutoscroll(false); // don't let snap-to-top fight the jump
+    }
+    if (d && /^\d{8}$/.test(d)) {
+      const parsed = new Date(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8));
+      if (!isNaN(parsed)) setDate(parsed);
+    }
+  }, []);
 
   // Fetch a day's recordings, then — while viewing the current day — subscribe
   // to a live SSE stream so new transcriptions appear within ~1s of being
@@ -220,6 +242,44 @@ function Dashboard() {
     };
   }, [view, loading]);
 
+  // Toggle a recording's shared bookmark flag, optimistically. Reverts the
+  // local state if the write fails.
+  const handleToggleBookmark = (id, next) => {
+    setWaves((prev) =>
+      prev.map((w) => (w._id === id ? { ...w, bookmarked: next } : w))
+    );
+    fetch("/api/bookmark", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, bookmarked: next }),
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error("bookmark failed");
+      })
+      .catch(() => {
+        setWaves((prev) =>
+          prev.map((w) => (w._id === id ? { ...w, bookmarked: !next } : w))
+        );
+      });
+  };
+
+  // Once the deep-linked day has loaded, scroll its target card into view and
+  // flash it. Consumes focusIdRef so it only fires once.
+  useEffect(() => {
+    if (loading) return;
+    const id = focusIdRef.current;
+    if (!id) return;
+    const el = document.getElementById(`rec-${id}`);
+    if (!el) return; // not on this day (or not yet rendered) — leave it armed
+    focusIdRef.current = null;
+    const headerH = document.querySelector("header")?.offsetHeight ?? 0;
+    const y = el.getBoundingClientRect().top + window.scrollY - headerH - 12;
+    window.scrollTo({ top: y, behavior: "smooth" });
+    el.classList.add("animate-focus-flash");
+    const t = setTimeout(() => el.classList.remove("animate-focus-flash"), 2000);
+    return () => clearTimeout(t);
+  }, [loading, view]);
+
   // Jump the list to the recording nearest a clicked point on the timeline.
   const handlePickTime = (fraction) => {
     if (filtered.length === 0) return;
@@ -271,6 +331,7 @@ function Dashboard() {
                 item={item}
                 index={i}
                 isNew={recentIds.has(item._id)}
+                onToggleBookmark={handleToggleBookmark}
               />
             ))}
           </div>

@@ -1,5 +1,6 @@
 "use client";
-import { Radio, RadioTower, ArrowDownToLine } from "lucide-react";
+import Link from "next/link";
+import { Radio, RadioTower, ArrowDownToLine, Star } from "lucide-react";
 import DayPager from "./DayPager";
 import SearchBar from "./SearchBar";
 import DayTimeline from "./DayTimeline";
@@ -69,6 +70,14 @@ export default function AppHeader({
               <RadioTower className="size-4" />
               Live
             </button>
+            <Link
+              href="/bookmarks"
+              title="Browse bookmarked transmissions"
+              className="flex items-center gap-1.5 rounded-md border border-star/40 bg-star-soft px-2.5 py-2 font-mono text-[0.65rem] uppercase tracking-[0.15em] text-star transition-colors hover:border-star"
+            >
+              <Star className="size-4" />
+              Saved
+            </Link>
             <DayPager date={date} onChange={onDateChange} />
           </div>
         </div>
