@@ -1,0 +1,79 @@
+{{- if .Values.flagger.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "wavebrowser.fullname" . }}-flagger
+  labels:
+    {{- include "wavebrowser.labels" . | nindent 4 }}
+    app.kubernetes.io/component: flagger
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: flagger
+  template:
+    metadata:
+      labels:
+        {{- include "wavebrowser.labels" . | nindent 8 }}
+        app.kubernetes.io/component: flagger
+    spec:
+      {{- with .Values.flagger.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.flagger.model.url }}
+      # One-time GGUF download to the model PVC. Skipped once the file exists, so
+      # subsequent restarts don't re-fetch. Omit flagger.model.url to place the
+      # model on the PVC manually instead.
+      initContainers:
+        - name: fetch-model
+          image: curlimages/curl:latest
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              if [ ! -f "/models/{{ .Values.flagger.model.filename }}" ]; then
+                echo "Downloading model to /models/{{ .Values.flagger.model.filename }}"
+                curl -fL --retry 3 -o "/models/{{ .Values.flagger.model.filename }}" "{{ .Values.flagger.model.url }}"
+              else
+                echo "Model already present, skipping download."
+              fi
+          volumeMounts:
+            - name: model
+              mountPath: /models
+      {{- end }}
+      containers:
+        - name: flagger
+          image: "{{ .Values.images.flagger.repository }}:{{ .Values.images.flagger.tag }}"
+          imagePullPolicy: {{ .Values.images.flagger.pullPolicy }}
+          env:
+            {{- range $k, $v := .Values.flagger.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            # Managed by the chart from the mounted model PVC.
+            - name: FLAG_MODEL_PATH
+              value: "/models/{{ .Values.flagger.model.filename }}"
+            - name: MONGODB_DB
+              value: {{ .Values.mongoDatabase | quote }}
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wavebrowser.fullname" . }}-mongo
+                  key: MONGODB_URI
+          volumeMounts:
+            - name: model
+              mountPath: /models
+          {{- with .Values.flagger.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: model
+          persistentVolumeClaim:
+            claimName: {{ include "wavebrowser.fullname" . }}-flagger-model
+{{- end }}

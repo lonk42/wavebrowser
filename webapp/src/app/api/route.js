@@ -56,6 +56,8 @@ export async function GET(request) {
     duration: doc.duration ?? null,
     peaks: doc.peaks ?? null,
     bookmarked: !!doc.bookmarked,
+    interesting: !!doc.interesting,
+    interesting_reason: doc.interesting_reason ?? null,
     transcription: doc.transcriptions?.[TRANSCRIPTION_KEY]?.transcription ?? '',
     audioUrl: `/api/audio/${doc.rel_path}`,
   }))

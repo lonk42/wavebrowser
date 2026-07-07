@@ -1,5 +1,5 @@
 "use client";
-import { Search, X } from "lucide-react";
+import { Search, X, Flame } from "lucide-react";
 
 const mhz = (hz) => (Number(hz) / 1e6).toFixed(3);
 
@@ -9,6 +9,9 @@ export default function SearchBar({
   freqs,
   activeFreq,
   onFreqChange,
+  hasInteresting,
+  interestingOnly,
+  onToggleInterestingOnly,
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -32,16 +35,41 @@ export default function SearchBar({
         )}
       </div>
 
-      {freqs.length > 1 && (
+      {(hasInteresting || freqs.length > 1) && (
         <div className="flex flex-wrap items-center gap-1.5">
-          <Chip active={activeFreq === null} onClick={() => onFreqChange(null)}>
-            All
-          </Chip>
-          {freqs.map((f) => (
-            <Chip key={f} active={activeFreq === f} onClick={() => onFreqChange(f)}>
-              {mhz(f)}
-            </Chip>
-          ))}
+          {hasInteresting && (
+            <button
+              onClick={onToggleInterestingOnly}
+              aria-pressed={interestingOnly}
+              title="Show only transmissions flagged as interesting"
+              className={`flex items-center gap-1 rounded-md border px-2.5 py-1 font-mono text-xs tracking-tight transition-colors ${
+                interestingOnly
+                  ? "border-flag/50 bg-flag-soft text-flag"
+                  : "border-line text-muted hover:border-flag/50 hover:text-flag"
+              }`}
+            >
+              <Flame
+                className="size-3.5"
+                fill={interestingOnly ? "currentColor" : "none"}
+              />
+              Interesting
+            </button>
+          )}
+          {hasInteresting && freqs.length > 1 && (
+            <span className="mx-1 h-4 w-px bg-line" aria-hidden />
+          )}
+          {freqs.length > 1 && (
+            <>
+              <Chip active={activeFreq === null} onClick={() => onFreqChange(null)}>
+                All
+              </Chip>
+              {freqs.map((f) => (
+                <Chip key={f} active={activeFreq === f} onClick={() => onFreqChange(f)}>
+                  {mhz(f)}
+                </Chip>
+              ))}
+            </>
+          )}
         </div>
       )}
     </div>

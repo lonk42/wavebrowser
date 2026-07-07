@@ -1,7 +1,7 @@
 "use client";
 import { format } from "date-fns";
 import Link from "next/link";
-import { Play, Pause, Star, CalendarArrowUp } from "lucide-react";
+import { Play, Pause, Star, CalendarArrowUp, Flame } from "lucide-react";
 import { usePlayer } from "@/context/PlayerContext";
 import CardWaveform from "@/components/CardWaveform";
 
@@ -28,14 +28,17 @@ export default function RecordingCard({
   const isActive = currentId === item._id;
   const isThisPlaying = isActive && isPlaying;
   const bookmarked = !!item.bookmarked;
+  const interesting = !!item.interesting;
   const date = new Date(item.date);
 
-  // Border: active glow wins, then a bookmarked card reads gold, else the
-  // default idle border with hover treatment.
+  // Border: active glow wins, then a user-bookmarked card reads gold, then an
+  // LLM-flagged "interesting" card reads orange, else the default idle border.
   const borderClass = isActive
     ? "border-signal/40 bg-elevated shadow-[0_0_30px_-12px_var(--color-signal)]"
     : bookmarked
     ? "border-star/60 bg-surface hover:border-star hover:bg-elevated"
+    : interesting
+    ? "border-flag/50 bg-surface hover:border-flag hover:bg-elevated"
     : "border-line bg-surface hover:border-line-strong hover:bg-elevated";
 
   return (
@@ -101,6 +104,18 @@ export default function RecordingCard({
         {/* Transcription — pad the right edge so the corner controls never sit
             on top of the text. */}
         <p className="flex-1 self-center pr-16 text-sm leading-relaxed text-fg/90">
+          {interesting && (
+            <span
+              title={item.interesting_reason || "Flagged as interesting"}
+              className="mr-1.5 inline-flex align-middle text-flag"
+            >
+              <Flame
+                className="size-3.5"
+                fill="currentColor"
+                aria-label="Flagged as interesting"
+              />
+            </span>
+          )}
           {item.transcription}
         </p>
 

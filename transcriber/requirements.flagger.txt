@@ -1,0 +1,4 @@
+pymongo
+# CPU build installed from the prebuilt-wheel index in Dockerfile.flagger. Pin a
+# version once you've confirmed a wheel exists for your Python/platform.
+llama-cpp-python

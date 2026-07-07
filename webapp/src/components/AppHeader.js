@@ -14,6 +14,9 @@ export default function AppHeader({
   freqs,
   activeFreq,
   onFreqChange,
+  hasInteresting,
+  interestingOnly,
+  onToggleInterestingOnly,
   count,
   items,
   visibleRange,
@@ -95,6 +98,9 @@ export default function AppHeader({
             freqs={freqs}
             activeFreq={activeFreq}
             onFreqChange={onFreqChange}
+            hasInteresting={hasInteresting}
+            interestingOnly={interestingOnly}
+            onToggleInterestingOnly={onToggleInterestingOnly}
           />
         </div>
 

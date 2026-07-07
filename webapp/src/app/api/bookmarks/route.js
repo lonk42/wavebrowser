@@ -30,6 +30,8 @@ export async function GET() {
     duration: doc.duration ?? null,
     peaks: doc.peaks ?? null,
     bookmarked: true,
+    interesting: !!doc.interesting,
+    interesting_reason: doc.interesting_reason ?? null,
     transcription: doc.transcriptions?.[TRANSCRIPTION_KEY]?.transcription ?? '',
     audioUrl: `/api/audio/${doc.rel_path}`,
   }))
