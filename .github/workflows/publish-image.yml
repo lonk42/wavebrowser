@@ -23,9 +23,16 @@ jobs:
       matrix:
         include:
           - context: transcriber
+            file: transcriber/Dockerfile
             suffix: processor
           - context: webapp
+            file: webapp/Dockerfile
             suffix: web
+          # CPU-only flagger: same build context as the transcriber but a
+          # different Dockerfile (slim CPU base, no CUDA).
+          - context: transcriber
+            file: transcriber/Dockerfile.flagger
+            suffix: flagger
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -54,6 +61,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

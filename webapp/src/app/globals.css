@@ -17,9 +17,21 @@
   --color-signal: #bef24a;
   --color-signal-soft: rgba(190, 242, 74, 0.14);
 
-  /* Bookmark / star accent — the only non-lime accent, reserved for saved items */
+  /* Bookmark / star accent — reserved for user-saved items */
   --color-star: #facc15;
   --color-star-soft: rgba(250, 204, 21, 0.14);
+
+  /* "Interesting" accent — warm orange, reserved for LLM-flagged transmissions.
+     Distinct from the gold star (user saves) and the lime signal. */
+  --color-flag: #fb923c;
+  --color-flag-soft: rgba(251, 146, 60, 0.14);
+
+  /* Human feedback on flags — thumbs up (green) / down (red). A training-data
+     taste signal, kept visually distinct from the accents above. */
+  --color-up: #4ade80;
+  --color-up-soft: rgba(74, 222, 128, 0.14);
+  --color-down: #f87171;
+  --color-down-soft: rgba(248, 113, 113, 0.14);
 
   /* Type — distinctive, domain-appropriate */
   --font-display: var(--font-bricolage), ui-sans-serif, sans-serif;

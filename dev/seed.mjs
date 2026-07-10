@@ -122,7 +122,8 @@ async function main() {
       await mkdir(path.join(RECORDINGS_DIR, dayDir), { recursive: true });
       await writeFile(path.join(RECORDINGS_DIR, relPath), makeWav(duration));
 
-      docs.push({
+      const phrase = pick(PHRASES);
+      const doc = {
         filename,
         rel_path: relPath,
         date,
@@ -130,9 +131,28 @@ async function main() {
         duration,
         peaks: makePeaks(),
         transcriptions: {
-          [KEY]: { transcription: pick(PHRASES), model: "dev-seed", language: "en", date: new Date() },
+          [KEY]: { transcription: phrase, model: "dev-seed", language: "en", date: new Date() },
         },
-      });
+      };
+
+      // Fake the flagger's output on a few of the sample phrases so the dev stack
+      // shows the "interesting" badge/border/filter. Real flags come from the
+      // flagger service (transcriber/flagger). Like the real contract,
+      // `interesting` is only present when true.
+      if (/mayday|second alarm|requesting medical|structure fire/i.test(phrase)) {
+        doc.interesting = true;
+        doc.interesting_reason = "score 8.5/9 — daily top 20 (dev only).";
+        doc.flagged_meta = {
+          model: "dev-seed", prompt_version: "dev", date: new Date(),
+          score: 8.5, passes: [8.4, 8.6, 8.5],
+        };
+        // Sprinkle some human thumbs feedback so the thumbs controls render with
+        // state in the dev stack. Real feedback comes from the webapp UI.
+        doc.flag_feedback = Math.random() < 0.5 ? "up" : "down";
+        doc.flag_feedback_date = new Date();
+      }
+
+      docs.push(doc);
     }
   }
 

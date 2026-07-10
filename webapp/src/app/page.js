@@ -26,6 +26,7 @@ function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [activeFreq, setActiveFreq] = useState(null);
+  const [interestingOnly, setInterestingOnly] = useState(false);
   const [liveOpen, setLiveOpen] = useState(false);
   const [autoscroll, setAutoscroll] = useState(true);
   // [startFraction, endFraction] of the day currently within the viewport, used
@@ -106,6 +107,7 @@ function Dashboard() {
     setLoading(true);
     setActiveFreq(null);
     setQuery("");
+    setInterestingOnly(false);
     seenIdsRef.current = new Set();
     setRecentIds(new Set());
 
@@ -153,14 +155,18 @@ function Dashboard() {
     [waves]
   );
 
+  // Whether the day has any LLM-flagged items — gates showing the filter toggle.
+  const hasInteresting = useMemo(() => waves.some((w) => w.interesting), [waves]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return waves.filter((w) => {
       if (activeFreq && w.frequency_hz !== activeFreq) return false;
+      if (interestingOnly && !w.interesting) return false;
       if (q && !(w.transcription || "").toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [waves, query, activeFreq]);
+  }, [waves, query, activeFreq, interestingOnly]);
 
   // Display newest-first. `filtered` stays chronological (used by the timeline's
   // pick logic); `view` is the reversed list the card list renders.
@@ -263,6 +269,28 @@ function Dashboard() {
       });
   };
 
+  // Set a recording's shared thumbs feedback ("up"/"down"/null), optimistically.
+  // Reverts to the prior value if the write fails.
+  const handleSetFeedback = (id, next) => {
+    const prevVal = waves.find((w) => w._id === id)?.flag_feedback ?? null;
+    setWaves((prev) =>
+      prev.map((w) => (w._id === id ? { ...w, flag_feedback: next } : w))
+    );
+    fetch("/api/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, feedback: next }),
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error("feedback failed");
+      })
+      .catch(() => {
+        setWaves((prev) =>
+          prev.map((w) => (w._id === id ? { ...w, flag_feedback: prevVal } : w))
+        );
+      });
+  };
+
   // Once the deep-linked day has loaded, scroll its target card into view and
   // flash it. Consumes focusIdRef so it only fires once.
   useEffect(() => {
@@ -303,6 +331,9 @@ function Dashboard() {
         freqs={freqs}
         activeFreq={activeFreq}
         onFreqChange={setActiveFreq}
+        hasInteresting={hasInteresting}
+        interestingOnly={interestingOnly}
+        onToggleInterestingOnly={() => setInterestingOnly((v) => !v)}
         count={filtered.length}
         items={filtered}
         visibleRange={visibleRange}
@@ -332,6 +363,7 @@ function Dashboard() {
                 index={i}
                 isNew={recentIds.has(item._id)}
                 onToggleBookmark={handleToggleBookmark}
+                onSetFeedback={handleSetFeedback}
               />
             ))}
           </div>

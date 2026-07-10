@@ -1,0 +1,20 @@
+# CPU-only image for the interesting-message flagger. Deliberately NOT the CUDA
+# transcriber base: the flagger runs llama.cpp on CPU and needs no GPU/cuDNN.
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /usr/src/app
+
+COPY requirements.flagger.txt ./
+# CPU wheels for llama-cpp-python come from its prebuilt-wheel index, so the
+# slim image needs no compiler/cmake. If a wheel isn't published for this
+# Python/platform, either pin a version that is or add build-essential + cmake
+# and let pip build from source.
+RUN pip3 install --no-cache-dir \
+    --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu \
+    -r requirements.flagger.txt
+
+COPY flagger /usr/src/app
+
+CMD ["python3", "/usr/src/app/main.py"]

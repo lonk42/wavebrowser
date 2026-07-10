@@ -76,6 +76,27 @@ function Bookmarks() {
       });
   };
 
+  // Set a recording's shared thumbs feedback ("up"/"down"/null), optimistically.
+  const handleSetFeedback = (id, next) => {
+    const prevVal = items.find((it) => it._id === id)?.flag_feedback ?? null;
+    setItems((prev) =>
+      prev.map((it) => (it._id === id ? { ...it, flag_feedback: next } : it))
+    );
+    fetch("/api/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, feedback: next }),
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error("feedback failed");
+      })
+      .catch(() => {
+        setItems((prev) =>
+          prev.map((it) => (it._id === id ? { ...it, flag_feedback: prevVal } : it))
+        );
+      });
+  };
+
   return (
     <div className="min-h-dvh">
       <header className="sticky top-0 z-30 border-b border-line bg-bg/80 backdrop-blur-xl">
@@ -127,6 +148,7 @@ function Bookmarks() {
                 item={item}
                 index={i}
                 onToggleBookmark={handleToggleBookmark}
+                onSetFeedback={handleSetFeedback}
                 jumpHref={`/?date=${localYmd(item.date)}&focus=${item._id}`}
               />
             ))}
