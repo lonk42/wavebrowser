@@ -269,6 +269,28 @@ function Dashboard() {
       });
   };
 
+  // Set a recording's shared thumbs feedback ("up"/"down"/null), optimistically.
+  // Reverts to the prior value if the write fails.
+  const handleSetFeedback = (id, next) => {
+    const prevVal = waves.find((w) => w._id === id)?.flag_feedback ?? null;
+    setWaves((prev) =>
+      prev.map((w) => (w._id === id ? { ...w, flag_feedback: next } : w))
+    );
+    fetch("/api/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, feedback: next }),
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error("feedback failed");
+      })
+      .catch(() => {
+        setWaves((prev) =>
+          prev.map((w) => (w._id === id ? { ...w, flag_feedback: prevVal } : w))
+        );
+      });
+  };
+
   // Once the deep-linked day has loaded, scroll its target card into view and
   // flash it. Consumes focusIdRef so it only fires once.
   useEffect(() => {
@@ -341,6 +363,7 @@ function Dashboard() {
                 index={i}
                 isNew={recentIds.has(item._id)}
                 onToggleBookmark={handleToggleBookmark}
+                onSetFeedback={handleSetFeedback}
               />
             ))}
           </div>

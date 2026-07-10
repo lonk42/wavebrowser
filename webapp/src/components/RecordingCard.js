@@ -1,7 +1,7 @@
 "use client";
 import { format } from "date-fns";
 import Link from "next/link";
-import { Play, Pause, Star, CalendarArrowUp, Flame } from "lucide-react";
+import { Play, Pause, Star, CalendarArrowUp, Flame, ThumbsUp, ThumbsDown } from "lucide-react";
 import { usePlayer } from "@/context/PlayerContext";
 import CardWaveform from "@/components/CardWaveform";
 
@@ -22,6 +22,7 @@ export default function RecordingCard({
   index,
   isNew,
   onToggleBookmark,
+  onSetFeedback,
   jumpHref,
 }) {
   const { currentId, isPlaying, playTrack } = usePlayer();
@@ -29,6 +30,9 @@ export default function RecordingCard({
   const isThisPlaying = isActive && isPlaying;
   const bookmarked = !!item.bookmarked;
   const interesting = !!item.interesting;
+  // Human thumbs verdict on the flag — "up" | "down" | null. Clicking the active
+  // one again clears it. Captured as training data, so shown on every card.
+  const feedback = item.flag_feedback ?? null;
   const date = new Date(item.date);
 
   // Border: active glow wins, then a user-bookmarked card reads gold, then an
@@ -133,9 +137,35 @@ export default function RecordingCard({
         )}
       </button>
 
-      {/* Corner controls: jump-to-dashboard (bookmarks page only) + star toggle.
-          Siblings of the play button, not nested inside it. */}
+      {/* Corner controls: thumbs feedback + jump-to-dashboard (bookmarks page
+          only) + star toggle. Siblings of the play button, not nested inside it. */}
       <div className="absolute right-2.5 top-2.5 flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onSetFeedback?.(item._id, feedback === "up" ? null : "up")}
+          aria-pressed={feedback === "up"}
+          title={feedback === "up" ? "Clear feedback" : "Good flag — thumbs up"}
+          className={`grid size-8 place-items-center rounded-md border transition-colors ${
+            feedback === "up"
+              ? "border-up/50 bg-up-soft text-up"
+              : "border-line text-muted hover:border-up/50 hover:text-up"
+          }`}
+        >
+          <ThumbsUp className="size-4" fill={feedback === "up" ? "currentColor" : "none"} />
+        </button>
+        <button
+          type="button"
+          onClick={() => onSetFeedback?.(item._id, feedback === "down" ? null : "down")}
+          aria-pressed={feedback === "down"}
+          title={feedback === "down" ? "Clear feedback" : "Not interesting — thumbs down"}
+          className={`grid size-8 place-items-center rounded-md border transition-colors ${
+            feedback === "down"
+              ? "border-down/50 bg-down-soft text-down"
+              : "border-line text-muted hover:border-down/50 hover:text-down"
+          }`}
+        >
+          <ThumbsDown className="size-4" fill={feedback === "down" ? "currentColor" : "none"} />
+        </button>
         {jumpHref && (
           <Link
             href={jumpHref}

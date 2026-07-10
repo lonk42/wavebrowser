@@ -26,6 +26,13 @@
   --color-flag: #fb923c;
   --color-flag-soft: rgba(251, 146, 60, 0.14);
 
+  /* Human feedback on flags — thumbs up (green) / down (red). A training-data
+     taste signal, kept visually distinct from the accents above. */
+  --color-up: #4ade80;
+  --color-up-soft: rgba(74, 222, 128, 0.14);
+  --color-down: #f87171;
+  --color-down-soft: rgba(248, 113, 113, 0.14);
+
   /* Type — distinctive, domain-appropriate */
   --font-display: var(--font-bricolage), ui-sans-serif, sans-serif;
   --font-sans: var(--font-hanken), ui-sans-serif, sans-serif;
