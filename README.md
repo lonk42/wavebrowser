@@ -1,8 +1,8 @@
 # Wavebrowser
 A stack for recording USB-SDR based radio to file, generating transcriptions against those recordings, browsable via a web GUI.
 
-![Transcriber Docker Image](https://img.shields.io/badge/Transcriber%20Docker%20Image-0.1.0-red)
-![Helm Chart](https://img.shields.io/badge/Helm%20Chart-0.1.0-red)
+![Transcriber Docker Image](https://img.shields.io/badge/Transcriber%20Docker%20Image-0.9.1-red)
+![Helm Chart](https://img.shields.io/badge/Helm%20Chart-0.9.1-red)
 ![License GPL3.0](https://img.shields.io/badge/License-GPL3.0-blue.svg)
 
 ## Architecture
