@@ -21,6 +21,7 @@ export default function RecordingCard({
   item,
   index,
   isNew,
+  flashId,
   onToggleBookmark,
   onSetFeedback,
   jumpHref,
@@ -49,7 +50,12 @@ export default function RecordingCard({
     // Root is a plain element (not a button) so the star/jump controls can be
     // real buttons/links without nesting interactive elements. The id +
     // scroll-mt live here so timeline jump-to-card still targets it.
-    <div id={`rec-${item._id}`} className="group relative isolate scroll-mt-44">
+    <div
+      id={`rec-${item._id}`}
+      className={`group relative isolate scroll-mt-44${
+        flashId === item._id ? " animate-focus-flash" : ""
+      }`}
+    >
       <button
         type="button"
         onClick={() => playTrack(item)}

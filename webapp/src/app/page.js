@@ -1,5 +1,13 @@
 "use client";
-import { useState, useEffect, useMemo, useRef } from "react";
+import {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useCallback,
+} from "react";
+import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import { PlayerProvider, usePlayer } from "@/context/PlayerContext";
 import AppHeader from "@/components/AppHeader";
 import RecordingCard from "@/components/RecordingCard";
@@ -32,6 +40,10 @@ function Dashboard() {
   // [startFraction, endFraction] of the day currently within the viewport, used
   // to draw the "you are here" window on the timeline. null when nothing's shown.
   const [visibleRange, setVisibleRange] = useState(null);
+  // Id of a card to briefly flash (deep-link jump). Off-screen cards aren't in
+  // the DOM under virtualization, so the flash is driven by prop rather than by
+  // toggling a class on a queried element.
+  const [flashId, setFlashId] = useState(null);
   // Ids of recordings that arrived *live* (via SSE) rather than in the initial
   // day load, so their cards can slide in instead of using the load-time
   // staggered reveal. `seenIds` is the dedup source of truth across the fetch
@@ -172,6 +184,52 @@ function Dashboard() {
   // pick logic); `view` is the reversed list the card list renders.
   const view = useMemo(() => [...filtered].reverse(), [filtered]);
 
+  // Virtualized list: only the cards in/near the viewport are mounted, so a
+  // busy day (~1200 cards, each with a ~100-bar SVG waveform) no longer mounts
+  // ~100k+ DOM nodes at once. `useWindowVirtualizer` keeps the page on window
+  // scroll, so the sticky header, autoscroll, and window.scrollTo logic below
+  // are untouched. `scrollMargin` is the list container's document offset (the
+  // space the header + top padding occupy above it), so virtual-item positions
+  // are in document coordinates.
+  const listRef = useRef(null);
+  const [listOffset, setListOffset] = useState(0);
+  useLayoutEffect(() => {
+    const measure = () => setListOffset(listRef.current?.offsetTop ?? 0);
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [loading]);
+
+  const virtualizer = useWindowVirtualizer({
+    count: view.length,
+    estimateSize: () => 96, // ~card height; refined per-row by measureElement
+    overscan: 8,
+    scrollMargin: listOffset,
+  });
+
+  // Scroll a card into view even when it's off-screen (not yet mounted): tell
+  // the virtualizer to bring its index near the top, then — once the row has
+  // mounted — nudge for the sticky header. Returns false if the id isn't in the
+  // current (filtered) view.
+  const scrollToCard = useCallback(
+    (id) => {
+      const idx = view.findIndex((w) => w._id === id);
+      if (idx < 0) return false;
+      virtualizer.scrollToIndex(idx, { align: "start" });
+      // The row mounts after the virtualizer re-measures around the new offset;
+      // give it a couple of frames before the header-offset correction.
+      setTimeout(() => {
+        const el = document.getElementById(`rec-${id}`);
+        if (!el) return;
+        const headerH = document.querySelector("header")?.offsetHeight ?? 0;
+        const y = el.getBoundingClientRect().top + window.scrollY - headerH - 12;
+        window.scrollTo({ top: y, behavior: "smooth" });
+      }, 60);
+      return true;
+    },
+    [view, virtualizer]
+  );
+
   // The player navigates the chronological list, not the reversed display order,
   // so next()/auto-advance move *forward in time* (older -> newer). With the
   // newest-first `view` the player stepped backwards in time instead. Navigation
@@ -221,14 +279,17 @@ function Dashboard() {
     const compute = () => {
       raf = 0;
       const headerH = document.querySelector("header")?.offsetHeight ?? 0;
-      const bottom = window.innerHeight;
+      // Virtual items carry document-space start/end (scrollMargin is baked in),
+      // so compare directly against the document-space viewport, minus the
+      // sticky header that covers the top of it.
+      const top = window.scrollY + headerH;
+      const bottom = window.scrollY + window.innerHeight;
       let lo = Infinity;
       let hi = -Infinity;
-      for (const w of view) {
-        const el = document.getElementById(`rec-${w._id}`);
-        if (!el) continue;
-        const r = el.getBoundingClientRect();
-        if (r.bottom < headerH || r.top > bottom) continue;
+      for (const vi of virtualizer.getVirtualItems()) {
+        if (vi.end < top || vi.start > bottom) continue;
+        const w = view[vi.index];
+        if (!w) continue;
         const f = secOfDay(w.date) / 86400;
         if (f < lo) lo = f;
         if (f > hi) hi = f;
@@ -246,7 +307,7 @@ function Dashboard() {
       window.removeEventListener("resize", onScroll);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [view, loading]);
+  }, [view, loading, virtualizer]);
 
   // Toggle a recording's shared bookmark flag, optimistically. Reverts the
   // local state if the write fails.
@@ -292,21 +353,20 @@ function Dashboard() {
   };
 
   // Once the deep-linked day has loaded, scroll its target card into view and
-  // flash it. Consumes focusIdRef so it only fires once.
+  // flash it. Consumes focusIdRef so it only fires once. The flash is driven by
+  // `flashId` (a prop on the card) rather than a class toggle, since the target
+  // may be off-screen and unmounted until the virtualizer scrolls to it.
   useEffect(() => {
     if (loading) return;
     const id = focusIdRef.current;
     if (!id) return;
-    const el = document.getElementById(`rec-${id}`);
-    if (!el) return; // not on this day (or not yet rendered) — leave it armed
+    if (!view.some((w) => w._id === id)) return; // not on this day — stay armed
     focusIdRef.current = null;
-    const headerH = document.querySelector("header")?.offsetHeight ?? 0;
-    const y = el.getBoundingClientRect().top + window.scrollY - headerH - 12;
-    window.scrollTo({ top: y, behavior: "smooth" });
-    el.classList.add("animate-focus-flash");
-    const t = setTimeout(() => el.classList.remove("animate-focus-flash"), 2000);
+    scrollToCard(id);
+    setFlashId(id);
+    const t = setTimeout(() => setFlashId(null), 2000);
     return () => clearTimeout(t);
-  }, [loading, view]);
+  }, [loading, view, scrollToCard]);
 
   // Jump the list to the recording nearest a clicked point on the timeline.
   const handlePickTime = (fraction) => {
@@ -314,11 +374,7 @@ function Dashboard() {
     const targetSec = fraction * 86400;
     const match =
       filtered.find((w) => secOfDay(w.date) >= targetSec) ?? filtered[filtered.length - 1];
-    const el = document.getElementById(`rec-${match._id}`);
-    if (!el) return;
-    const headerH = document.querySelector("header")?.offsetHeight ?? 0;
-    const y = el.getBoundingClientRect().top + window.scrollY - headerH - 12;
-    window.scrollTo({ top: y, behavior: "smooth" });
+    scrollToCard(match._id);
   };
 
   return (
@@ -355,17 +411,39 @@ function Dashboard() {
         ) : filtered.length === 0 ? (
           <EmptyState hasData={waves.length > 0} />
         ) : (
-          <div className="flex flex-col gap-2.5">
-            {view.map((item, i) => (
-              <RecordingCard
-                key={item._id}
-                item={item}
-                index={i}
-                isNew={recentIds.has(item._id)}
-                onToggleBookmark={handleToggleBookmark}
-                onSetFeedback={handleSetFeedback}
-              />
-            ))}
+          <div
+            ref={listRef}
+            style={{ height: virtualizer.getTotalSize(), position: "relative" }}
+          >
+            {virtualizer.getVirtualItems().map((vi) => {
+              const item = view[vi.index];
+              return (
+                <div
+                  key={item._id}
+                  data-index={vi.index}
+                  ref={virtualizer.measureElement}
+                  className="pb-2.5"
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${
+                      vi.start - virtualizer.options.scrollMargin
+                    }px)`,
+                  }}
+                >
+                  <RecordingCard
+                    item={item}
+                    index={vi.index}
+                    isNew={recentIds.has(item._id)}
+                    flashId={flashId}
+                    onToggleBookmark={handleToggleBookmark}
+                    onSetFeedback={handleSetFeedback}
+                  />
+                </div>
+              );
+            })}
           </div>
         )}
       </main>
