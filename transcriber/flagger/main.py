@@ -1,20 +1,28 @@
-"""Wavebrowser interesting-message flagger.
+"""Wavebrowser interesting-message flagger (daily scored pipeline).
 
 A CPU-only companion to the transcriber. It reads transcription *text* from the
 same MongoDB collection (never audio, never the GPU, never the recordings
-volume) and asks a small local LLM to flag the transmissions worth a human's
-attention against a configurable prompt.
+volume) and scores transmissions 0-9 with a small local LLM, promoting the top
+few per day to `interesting: true` — a hard daily flag budget rather than an
+open-ended flag/no-flag classifier.
 
-Cadence is message-rate driven, not time-of-day: the poller reacts to the
-transcriber's writes. Each poll it looks at the un-flagged backlog and processes
-it once enough accumulate (FLAG_BATCH_SIZE) or the oldest has waited long enough
-(FLAG_MAX_WAIT) — so busy periods form full batches and quiet periods still get
-flushed. It deliberately runs as its own process, NOT inside the transcriber: a
-llama.cpp call is seconds per batch and would stall the transcriber's single
-worker thread (the same reason whisper isn't run inline in the inotify callback).
+Cadence is per UTC day. Each poll it finds the oldest *complete* UTC day (any day
+before today) that still has un-scored transmissions and scores the whole day:
 
-To keep idle memory near zero the model is loaded per drain and released
-afterwards; mmap keeps the GGUF warm in the OS page cache so reloads are cheap.
+  prefilter (deterministic, drops ~half)         [prefilter.py]
+    -> 3 scoring passes in different orders        [engine.py Engine]
+       (chronological + two shuffles) — batches of SCORE_BATCH, each item scored
+       by logprob expectation over digit tokens, not the bare integer
+    -> per-record score = mean of the passes
+    -> top-TOPN by fused score get interesting=true; every record gets a score
+
+Per-record scores are wildly composition-sensitive, so the mean-of-N order
+ensemble is the main quality mechanism, not polish. On first deploy the poller
+walks all history oldest-first (the backfill), then settles into one day per day.
+
+It runs as its own process, NOT inside the transcriber: a llama.cpp pass over a
+day is minutes of CPU and would stall the transcriber's single worker. The model
+is loaded once per drain and released after, so idle RAM drops back to ~nothing.
 
 All configuration is via environment variables (see Config).
 """
@@ -22,15 +30,19 @@ All configuration is via environment variables (see Config).
 import gc
 import os
 import sys
-import json
 import time
+import random
 import signal
 import logging
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pymongo
 from pymongo import UpdateOne
+
+# Run as `python3 main.py`; make sibling modules importable regardless of cwd.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from prefilter import prefilter_docs  # noqa: E402
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
@@ -38,41 +50,32 @@ logging.basicConfig(
 )
 log = logging.getLogger("flagger")
 
-# Default system prompt — the model's full instructions for what to flag.
-# FLAG_PROMPT overrides this and is the ENTIRE system prompt (one block), not a
-# fragment glued onto a hidden prefix. Kept deliberately generic — tune it to
-# whatever "interesting" means for your own feed.
+# Default scoring rubric — the model's full instructions. SCORE_PROMPT overrides
+# this and is the ENTIRE system prompt (one block), not a fragment. Kept
+# deliberately generic and domain-neutral; tune the real rubric to your feed and
+# inject it via SCORE_PROMPT (e.g. Helm values), never in the repo.
 DEFAULT_PROMPT = (
-    "You are triaging short radio transmission transcriptions. Flag any "
-    "transmission that is interesting, unusual, or funny - anything that stands "
-    "out from routine traffic and a listener might want to review. Ignore routine "
-    "check-ins, radio tests, acknowledgements, and unintelligible fragments."
+    'You are curating a "most interesting moments" badge for short radio '
+    "transmission transcriptions. Only a tiny fraction of traffic deserves the "
+    "badge — most transmissions are routine and must score low. Score each "
+    "transmission from 0 to 9.\n"
+    "\n"
+    "Score high (7-9): genuinely funny, absurd, or deadpan exchanges; vivid, "
+    "novel, or bizarre incidents; a moment with real human character. Score the "
+    "event, not the wording.\n"
+    "Score mid (4-6): a real incident with an odd or human touch, but nothing "
+    "remarkable.\n"
+    "Score low (0-3): routine check-ins, callsigns, tests, acknowledgements, "
+    "status updates, and ordinary procedural chatter with no memorable detail.\n"
+    "\n"
+    "CRITICAL — garbled: if the text is so garbled, fragmentary, or "
+    "mis-transcribed that you cannot tell what actually happened, score 0-1 no "
+    "matter how dramatic the fragments sound.\n"
+    "CRITICAL — routine: if it is ordinary operational or procedural traffic, "
+    "score 0-1 no matter how urgent or busy it sounds.\n"
+    "\n"
+    "Be harsh and use the full range. Most items should score in the low band."
 )
-
-# JSON schema the model output is constrained to (via llama.cpp's grammar-backed
-# response_format), so a small model always returns something parseable. The
-# model lists ONLY the interesting items by their 1-based number in the batch;
-# anything omitted is treated as not interesting (better recall than a per-item
-# bool, and a trivially small output).
-RESPONSE_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "interesting": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "index": {"type": "integer"},
-                    "reason": {"type": "string"},
-                },
-                "required": ["index", "reason"],
-            },
-        }
-    },
-    "required": ["interesting"],
-}
-
-REASON_MAX_LEN = 300
 
 
 class Config:
@@ -93,28 +96,47 @@ class Config:
             log.error("FLAG_MODEL_PATH is required (path to a GGUF model)")
             sys.exit(1)
 
-        self.prompt = os.environ.get("FLAG_PROMPT") or DEFAULT_PROMPT
-        # Stamped onto every processed doc. Bump it (and clear flagged_meta) to
-        # re-evaluate the corpus after changing the prompt.
-        self.prompt_version = os.environ.get("FLAG_PROMPT_VERSION", "1")
+        # SCORE_PROMPT is the whole scoring rubric. FLAG_PROMPT is accepted as a
+        # legacy alias so older deployments keep working.
+        self.prompt = (
+            os.environ.get("SCORE_PROMPT")
+            or os.environ.get("FLAG_PROMPT")
+            or DEFAULT_PROMPT
+        )
+        # Stamped onto every processed doc. Bump it (and clear flagged_meta +
+        # interesting/interesting_reason) to re-score the corpus after changing
+        # the prompt or model.
+        self.prompt_version = os.environ.get("FLAG_PROMPT_VERSION", "2")
 
-        # Messages per model call. Small keeps each prompt short (fast on CPU,
-        # in-context, high recall) and output mapping trivial.
-        self.batch_size = int(os.environ.get("FLAG_BATCH_SIZE", "40"))
-        # How often to check the backlog (seconds).
+        # Items per model call. Small keeps each prompt short and gives the model
+        # comparative context (routine chatter beside the odd line) to calibrate.
+        self.score_batch = int(os.environ.get("SCORE_BATCH", "12"))
+        # The daily flag budget: the top-N fused scores per UTC day get promoted.
+        self.topn = int(os.environ.get("TOPN", "20"))
+        # Order ensemble: score the day once per seed and average. 0 = keep
+        # chronological order; non-zero = shuffle with that seed. Mean-of-N is
+        # the main quality mechanism, so keep at least 3 orders.
+        self.pass_orders = self._parse_orders(os.environ.get("PASS_ORDERS", "0,7,13"))
+
+        # How often to look for a new complete un-scored day (seconds).
         self.poll_interval = int(os.environ.get("FLAG_POLL_INTERVAL", "300"))
-        # Flush a partial batch once its oldest un-flagged doc is at least this
-        # old, so quiet periods don't leave a handful of messages un-flagged
-        # indefinitely (seconds).
-        self.max_wait = int(os.environ.get("FLAG_MAX_WAIT", "1800"))
 
-        # llama.cpp knobs. n_ctx only needs to hold one batch prompt (~1-2k
-        # tokens) plus the small JSON output, so the KV cache stays cheap.
-        self.n_ctx = int(os.environ.get("FLAG_N_CTX", "4096"))
-        self.threads = int(os.environ.get("FLAG_THREADS", "0")) or None
-        self.max_tokens = int(os.environ.get("FLAG_MAX_TOKENS", "512"))
+        # llama.cpp knobs. n_ctx holds one batch prompt (rubric + ~12 items,
+        # ~1-2k tokens) plus the small JSON output. Threads should be PHYSICAL
+        # cores — SMT/logical cores measured markedly slower for llama.cpp decode.
+        self.n_ctx = int(os.environ.get("FLAG_N_CTX", "2048"))
+        self.threads = int(os.environ.get("FLAG_THREADS", "4")) or None
 
         self.model_name = Path(self.model_path).name
+
+    @staticmethod
+    def _parse_orders(raw):
+        orders = []
+        for part in raw.split(","):
+            part = part.strip()
+            if part:
+                orders.append(int(part))
+        return orders or [0]
 
 
 class Flagger:
@@ -137,9 +159,9 @@ class Flagger:
         signal.signal(signal.SIGTERM, self._handle_signal)
         signal.signal(signal.SIGINT, self._handle_signal)
         log.info(
-            "Flagger started: model=%s batch_size=%d poll=%ds max_wait=%ds",
-            self.config.model_name, self.config.batch_size,
-            self.config.poll_interval, self.config.max_wait,
+            "Flagger started: model=%s batch=%d topn=%d passes=%s poll=%ds",
+            self.config.model_name, self.config.score_batch, self.config.topn,
+            self.config.pass_orders, self.config.poll_interval,
         )
         while not self._stop:
             try:
@@ -159,150 +181,158 @@ class Flagger:
         while not self._stop and time.monotonic() < deadline:
             time.sleep(min(1.0, deadline - time.monotonic()))
 
-    # -- polling / draining -----------------------------------------------
+    # -- scheduling / draining --------------------------------------------
 
-    def _pending_cursor(self, limit):
+    def _next_unscored_day(self):
+        """(day_start, day_end) UTC of the oldest complete day with un-scored
+        transmissions, or None. A day before today UTC is by definition complete."""
+        today_start = datetime.now(timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        doc = self.collection.find_one(
+            {
+                self._text_field: {"$exists": True, "$ne": ""},
+                "flagged_meta": {"$exists": False},
+                "date": {"$lt": today_start},
+            },
+            {"date": 1},
+            sort=[("date", pymongo.ASCENDING)],
+        )
+        if not doc:
+            return None
+        d = doc["date"]
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=timezone.utc)
+        day_start = d.replace(hour=0, minute=0, second=0, microsecond=0)
+        return day_start, day_start + timedelta(days=1)
+
+    def _poll_once(self):
+        if self._next_unscored_day() is None:
+            return
+        self._drain()
+
+    def _drain(self):
+        # Load the model once, then score every complete un-scored day
+        # oldest-first (amortizes model load across a backfill), and release it.
+        log.info("Loading model %s", self.config.model_name)
+        engine = self._load_engine()
+        total = 0
+        try:
+            while not self._stop:
+                span = self._next_unscored_day()
+                if not span:
+                    break
+                day_start, day_end = span
+                n = self._process_day(engine, day_start, day_end)
+                total += n
+                log.info("UTC day %s scored: %d records", day_start.date(), n)
+        finally:
+            self._release_engine(engine)
+        log.info("Drain complete: %d records processed", total)
+
+    # -- scoring ----------------------------------------------------------
+
+    def _load_engine(self):
+        # Imported lazily so the module imports without llama_cpp present (e.g.
+        # for tests) and the load cost is only paid when there's work.
+        from engine import Engine
+
+        return Engine(self.config.model_path, self.config.threads, self.config.n_ctx)
+
+    def _release_engine(self, engine):
+        engine.close()
+        del engine
+        gc.collect()
+
+    def _process_day(self, engine, day_start, day_end):
+        docs = list(self._day_cursor(day_start, day_end))
+        if not docs:
+            return 0
+
+        kept, dropped = prefilter_docs(docs, self._doc_text)
+        now = datetime.now(timezone.utc)
+
+        # Score the kept docs once per order and collect the per-doc scores.
+        scores = {doc["_id"]: [] for doc in kept}
+        for seed in self.config.pass_orders:
+            if self._stop:
+                break
+            ordered = list(kept)
+            if seed:
+                random.Random(seed).shuffle(ordered)
+            self._score_pass(engine, ordered, scores)
+
+        # Fuse (mean of the passes) and rank; the top-N get promoted.
+        fused = {
+            _id: (sum(vals) / len(vals) if vals else 0.0)
+            for _id, vals in scores.items()
+        }
+        ranked = sorted(fused, key=fused.get, reverse=True)
+        topn = set(ranked[: self.config.topn])
+
+        base = {
+            "model": self.config.model_name,
+            "prompt_version": self.config.prompt_version,
+            "date": now,
+        }
+        ops = []
+        for doc in kept:
+            _id = doc["_id"]
+            meta = dict(base)
+            meta["score"] = round(fused[_id], 4)
+            meta["passes"] = [round(v, 4) for v in scores[_id]]
+            if not scores[_id]:
+                meta["error"] = True
+            update = {"flagged_meta": meta}
+            if _id in topn and scores[_id]:
+                update["interesting"] = True
+                update["interesting_reason"] = (
+                    f"score {fused[_id]:.1f}/9 — daily top {self.config.topn}"
+                )
+            ops.append(UpdateOne({"_id": _id}, {"$set": update}))
+        for doc in dropped:
+            meta = dict(base)
+            meta["score"] = 0
+            meta["prefiltered"] = True
+            ops.append(UpdateOne({"_id": doc["_id"]}, {"$set": {"flagged_meta": meta}}))
+
+        if ops:
+            self.collection.bulk_write(ops, ordered=False)
+        log.info(
+            "Day %s: %d kept, %d prefiltered, %d promoted",
+            day_start.date(), len(kept), len(dropped), min(len(topn), len(kept)),
+        )
+        return len(docs)
+
+    def _score_pass(self, engine, ordered_docs, scores):
+        batch = self.config.score_batch
+        for start in range(0, len(ordered_docs), batch):
+            if self._stop:
+                break
+            batch_docs = ordered_docs[start:start + batch]
+            texts = [self._doc_text(d) for d in batch_docs]
+            try:
+                entries = engine.score_batch(self.config.prompt, texts)
+            except Exception:  # noqa: BLE001 - a bad batch shouldn't wedge the day
+                log.exception("Scoring batch of %d failed", len(batch_docs))
+                continue
+            for bidx, sc in entries.items():
+                scores[batch_docs[bidx]["_id"]].append(sc)
+
+    # -- helpers ----------------------------------------------------------
+
+    def _day_cursor(self, day_start, day_end):
         return (
             self.collection.find(
                 {
                     self._text_field: {"$exists": True, "$ne": ""},
                     "flagged_meta": {"$exists": False},
+                    "date": {"$gte": day_start, "$lt": day_end},
                 },
                 {"_id": 1, "date": 1, self._text_field: 1},
             )
             .sort("date", pymongo.ASCENDING)
-            .limit(limit)
         )
-
-    def _poll_once(self):
-        # One cheap look at the head of the backlog decides readiness: a full
-        # batch is ready immediately; a partial batch waits until its oldest
-        # message has aged past max_wait.
-        head = list(self._pending_cursor(self.config.batch_size))
-        if not head:
-            return
-        ready = len(head) >= self.config.batch_size or (
-            self._age_seconds(head[0].get("date")) >= self.config.max_wait
-        )
-        if not ready:
-            log.debug("Backlog of %d not yet ready to flag", len(head))
-            return
-        self._drain()
-
-    def _drain(self):
-        # Ready to process: load the model once, then drain the whole pending
-        # backlog in batches (cheaper than paying reload cost for the tail), and
-        # release the model so idle RAM drops back to ~nothing.
-        log.info("Loading model %s", self.config.model_name)
-        llm = self._load_model()
-        total = 0
-        try:
-            while not self._stop:
-                batch = list(self._pending_cursor(self.config.batch_size))
-                if not batch:
-                    break
-                self._flag_batch(llm, batch)
-                total += len(batch)
-                if len(batch) < self.config.batch_size:
-                    break  # drained the tail
-        finally:
-            self._release_model(llm)
-        log.info("Flagged pass complete: %d transcriptions processed", total)
-
-    # -- inference --------------------------------------------------------
-
-    def _load_model(self):
-        # Imported lazily so the module imports without llama_cpp present (e.g.
-        # for tests) and the load cost is only paid when there's work.
-        from llama_cpp import Llama
-
-        return Llama(
-            model_path=self.config.model_path,
-            n_ctx=self.config.n_ctx,
-            n_threads=self.config.threads,
-            verbose=False,
-        )
-
-    def _release_model(self, llm):
-        try:
-            llm.close()
-        except Exception:  # noqa: BLE001 - best-effort; del + gc frees the rest
-            pass
-        del llm
-        gc.collect()
-
-    def _flag_batch(self, llm, batch):
-        prompt = self._build_user_prompt(batch)
-        now = datetime.now(timezone.utc)
-        try:
-            flagged = self._run_model(llm, prompt, len(batch))
-            error = False
-        except Exception:  # noqa: BLE001 - a bad response shouldn't wedge the loop
-            log.exception("Model call/parse failed for a batch of %d", len(batch))
-            flagged = {}
-            error = True
-
-        base_meta = {
-            "model": self.config.model_name,
-            "prompt_version": self.config.prompt_version,
-            "date": now,
-        }
-        if error:
-            base_meta["error"] = True
-
-        ops = []
-        for pos, doc in enumerate(batch, start=1):
-            update = {"flagged_meta": base_meta}
-            if pos in flagged:
-                update["interesting"] = True
-                update["interesting_reason"] = flagged[pos]
-            ops.append(UpdateOne({"_id": doc["_id"]}, {"$set": update}))
-        if ops:
-            self.collection.bulk_write(ops, ordered=False)
-        log.info(
-            "Batch of %d: %d flagged interesting%s",
-            len(batch), len(flagged), " (parse error)" if error else "",
-        )
-
-    def _build_user_prompt(self, batch):
-        lines = []
-        for pos, doc in enumerate(batch, start=1):
-            text = self._doc_text(doc).replace("\n", " ").strip()
-            lines.append(f"{pos}. {text}")
-        return (
-            "Here are numbered radio transmission transcriptions:\n\n"
-            + "\n".join(lines)
-            + "\n\nList ONLY the interesting ones by their number, each with a "
-            "reason of at most 15 words. If none are interesting, return an "
-            "empty list."
-        )
-
-    def _run_model(self, llm, user_prompt, batch_len):
-        out = llm.create_chat_completion(
-            messages=[
-                # FLAG_PROMPT is the entire system prompt (see DEFAULT_PROMPT).
-                {"role": "system", "content": self.config.prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            response_format={"type": "json_object", "schema": RESPONSE_SCHEMA},
-            temperature=0.0,
-            max_tokens=self.config.max_tokens,
-        )
-        content = out["choices"][0]["message"]["content"]
-        data = json.loads(content)
-
-        flagged = {}
-        for entry in data.get("interesting", []):
-            try:
-                idx = int(entry["index"])
-            except (KeyError, TypeError, ValueError):
-                continue
-            if 1 <= idx <= batch_len:
-                reason = str(entry.get("reason", "")).strip()[:REASON_MAX_LEN]
-                flagged[idx] = reason
-        return flagged
-
-    # -- helpers ----------------------------------------------------------
 
     def _doc_text(self, doc):
         return (
@@ -310,15 +340,6 @@ class Flagger:
             .get(self.config.transcription_key, {})
             .get("transcription", "")
         )
-
-    def _age_seconds(self, dt):
-        if dt is None:
-            return 0
-        # pymongo returns naive UTC datetimes by default; make comparison safe
-        # whether or not the client was configured tz-aware.
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return (datetime.now(timezone.utc) - dt).total_seconds()
 
 
 if __name__ == "__main__":

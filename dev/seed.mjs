@@ -141,8 +141,15 @@ async function main() {
       // `interesting` is only present when true.
       if (/mayday|second alarm|requesting medical|structure fire/i.test(phrase)) {
         doc.interesting = true;
-        doc.interesting_reason = "Flagged as an interesting sample (dev only).";
-        doc.flagged_meta = { model: "dev-seed", prompt_version: "dev", date: new Date() };
+        doc.interesting_reason = "score 8.5/9 — daily top 20 (dev only).";
+        doc.flagged_meta = {
+          model: "dev-seed", prompt_version: "dev", date: new Date(),
+          score: 8.5, passes: [8.4, 8.6, 8.5],
+        };
+        // Sprinkle some human thumbs feedback so the thumbs controls render with
+        // state in the dev stack. Real feedback comes from the webapp UI.
+        doc.flag_feedback = Math.random() < 0.5 ? "up" : "down";
+        doc.flag_feedback_date = new Date();
       }
 
       docs.push(doc);

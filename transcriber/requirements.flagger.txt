@@ -1,4 +1,8 @@
 pymongo
-# CPU build installed from the prebuilt-wheel index in Dockerfile.flagger. Pin a
-# version once you've confirmed a wheel exists for your Python/platform.
-llama-cpp-python
+numpy
+# CPU build installed from the prebuilt-wheel index in Dockerfile.flagger.
+# Pinned: engine.py reads digit logits off internal llama_cpp API
+# (llama_get_logits, Llama._ctx.ctx), which is version-sensitive. This is the
+# version the scored pipeline was validated against — confirm a CPU wheel exists
+# for your Python/platform before bumping it.
+llama-cpp-python==0.3.33

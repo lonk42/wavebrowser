@@ -144,35 +144,43 @@ web:
     PASSWORD_GATE_COLOR: "#bef24a"
 
 # Interesting-message flagger: a CPU-only pod that reads transcription text from
-# MongoDB and asks a small local LLM to flag transmissions worth reviewing. Off by
-# default because it needs a GGUF model on its PVC (either via model.url below or
-# placed manually). No GPU, no recordings volume — reads/writes MongoDB only.
+# MongoDB and scores transmissions with a small local LLM, promoting the top few
+# per UTC day to an "interesting" badge. Off by default because it needs a GGUF
+# model on its PVC (either via model.url below or placed manually). No GPU, no
+# recordings volume — reads/writes MongoDB only. See transcriber/flagger/README.md.
 flagger:
   enabled: false
   nodeSelector: {}
-  # e.g. limits: { memory: 3Gi } — size to the chosen model's peak RSS. A 3B Q4
-  # model peaks ~2.5-3GB while flagging a batch; idle it's ~tens of MB.
-  resources: {}
+  # Size to the chosen model's peak RSS. Qwen3-4B Q4 peaks ~3GB while scoring a
+  # day; idle it's ~tens of MB.
+  resources:
+    limits:
+      memory: 4Gi
   model:
     storageClassName: ""
     storage: 4Gi
     # File placed on the PVC and pointed at by FLAG_MODEL_PATH.
     filename: model.gguf
-    # One-time GGUF download URL (e.g. a Hugging Face .../resolve/main/<file>.gguf
-    # link). When set, an initContainer fetches it to the PVC on first start.
-    # Leave empty to place the file on the PVC manually.
-    url: ""
+    # One-time GGUF download URL. When set, an initContainer fetches it to the PVC
+    # on first start; leave empty to place the file manually. Default: the model
+    # the scored pipeline was validated on (Qwen3-4B-Instruct-2507 Q4_K_M, ~2.4GB).
+    url: "https://huggingface.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
   # Passed through as environment variables (see transcriber/flagger/README.md).
   # FLAG_MODEL_PATH / MONGODB_* are injected by the chart, don't set them here.
   env:
     TRANSCRIPTION_KEY: whisper
-    # FLAG_PROMPT is the entire system prompt (one block of instructions for what
-    # counts as "interesting"). Omit to use the built-in generic default; override
-    # to tune it to your own feed, e.g.:
-    # FLAG_PROMPT: "You are triaging radio transmissions. Flag any that are funny, unusual, or interesting; ignore routine traffic."
-    FLAG_BATCH_SIZE: "40"
+    # SCORE_PROMPT is the entire scoring rubric (one block). Omit to use the
+    # built-in generic default; override to tune it to your own feed. The tuned
+    # rubric is deployment-private — supply it via a values override, never commit
+    # it (this repo is public). FLAG_PROMPT is accepted as a legacy alias.
+    # SCORE_PROMPT: "You are curating a 'most interesting moments' badge for short radio transmissions. Score each 0-9; only the top handful per day deserve it. ..."
+    FLAG_PROMPT_VERSION: "2"
+    SCORE_BATCH: "12"
+    TOPN: "20"                 # daily flag budget; the recall/noise dial
+    PASS_ORDERS: "0,7,13"      # 0 = chronological, others = shuffle seeds
+    FLAG_THREADS: "4"          # PHYSICAL cores — SMT is markedly slower
+    FLAG_N_CTX: "2048"
     FLAG_POLL_INTERVAL: "300"
-    FLAG_MAX_WAIT: "1800"
 
 # Internal Icecast server for the live "Listen Live" stream. The sdr pod
 # publishes to it (see the icecast output in sdr.config) and the web pod proxies
