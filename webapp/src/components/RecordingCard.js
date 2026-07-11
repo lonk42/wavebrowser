@@ -1,7 +1,7 @@
 "use client";
 import { format } from "date-fns";
 import Link from "next/link";
-import { Play, Pause, Star, CalendarArrowUp, Flame, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Play, Pause, Star, CalendarArrowUp, Sparkles, ThumbsUp, ThumbsDown } from "lucide-react";
 import { usePlayer } from "@/context/PlayerContext";
 import CardWaveform from "@/components/CardWaveform";
 
@@ -32,18 +32,18 @@ export default function RecordingCard({
   const bookmarked = !!item.bookmarked;
   const interesting = !!item.interesting;
   // Human thumbs verdict on the flag — "up" | "down" | null. Clicking the active
-  // one again clears it. Captured as training data, so shown on every card.
+  // one again clears it. Captured as training data; shown on flagged cards only.
   const feedback = item.flag_feedback ?? null;
   const date = new Date(item.date);
 
   // Border: active glow wins, then a user-bookmarked card reads gold, then an
-  // LLM-flagged "interesting" card reads orange, else the default idle border.
+  // LLM-flagged "interesting" card reads green, else the default idle border.
   const borderClass = isActive
     ? "border-signal/40 bg-elevated shadow-[0_0_30px_-12px_var(--color-signal)]"
     : bookmarked
     ? "border-star/60 bg-surface hover:border-star hover:bg-elevated"
     : interesting
-    ? "border-flag/50 bg-surface hover:border-flag hover:bg-elevated"
+    ? "border-ai/50 bg-surface hover:border-ai hover:bg-elevated"
     : "border-line bg-surface hover:border-line-strong hover:bg-elevated";
 
   return (
@@ -114,18 +114,6 @@ export default function RecordingCard({
         {/* Transcription — pad the right edge so the corner controls never sit
             on top of the text. */}
         <p className="flex-1 self-center pr-16 text-sm leading-relaxed text-fg/90">
-          {interesting && (
-            <span
-              title={item.interesting_reason || "Flagged as interesting"}
-              className="mr-1.5 inline-flex align-middle text-flag"
-            >
-              <Flame
-                className="size-3.5"
-                fill="currentColor"
-                aria-label="Flagged as interesting"
-              />
-            </span>
-          )}
           {item.transcription}
         </p>
 
@@ -143,35 +131,48 @@ export default function RecordingCard({
         )}
       </button>
 
-      {/* Corner controls: thumbs feedback + jump-to-dashboard (bookmarks page
-          only) + star toggle. Siblings of the play button, not nested inside it. */}
+      {/* Corner controls: AI flag badge + thumbs feedback (flagged cards only) +
+          jump-to-dashboard (bookmarks/flagged pages only) + star toggle. Siblings
+          of the play button, not nested inside it. */}
       <div className="absolute right-2.5 top-2.5 flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => onSetFeedback?.(item._id, feedback === "up" ? null : "up")}
-          aria-pressed={feedback === "up"}
-          title={feedback === "up" ? "Clear feedback" : "Good flag — thumbs up"}
-          className={`grid size-8 place-items-center rounded-md border transition-colors ${
-            feedback === "up"
-              ? "border-up/50 bg-up-soft text-up"
-              : "border-line text-muted hover:border-up/50 hover:text-up"
-          }`}
-        >
-          <ThumbsUp className="size-4" fill={feedback === "up" ? "currentColor" : "none"} />
-        </button>
-        <button
-          type="button"
-          onClick={() => onSetFeedback?.(item._id, feedback === "down" ? null : "down")}
-          aria-pressed={feedback === "down"}
-          title={feedback === "down" ? "Clear feedback" : "Not interesting — thumbs down"}
-          className={`grid size-8 place-items-center rounded-md border transition-colors ${
-            feedback === "down"
-              ? "border-down/50 bg-down-soft text-down"
-              : "border-line text-muted hover:border-down/50 hover:text-down"
-          }`}
-        >
-          <ThumbsDown className="size-4" fill={feedback === "down" ? "currentColor" : "none"} />
-        </button>
+        {interesting && (
+          <span
+            title={item.interesting_reason || "Flagged as interesting"}
+            className="flex h-8 items-center gap-1 rounded-md border border-ai/50 bg-ai-soft px-2 font-mono text-[0.65rem] font-semibold uppercase tracking-wider text-ai"
+          >
+            <Sparkles className="size-3.5" aria-label="Flagged as interesting" /> AI
+          </span>
+        )}
+        {interesting && (
+          <>
+            <button
+              type="button"
+              onClick={() => onSetFeedback?.(item._id, feedback === "up" ? null : "up")}
+              aria-pressed={feedback === "up"}
+              title={feedback === "up" ? "Clear feedback" : "Good flag — thumbs up"}
+              className={`grid size-8 place-items-center rounded-md border transition-colors ${
+                feedback === "up"
+                  ? "border-up/50 bg-up-soft text-up"
+                  : "border-line text-muted hover:border-up/50 hover:text-up"
+              }`}
+            >
+              <ThumbsUp className="size-4" fill={feedback === "up" ? "currentColor" : "none"} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onSetFeedback?.(item._id, feedback === "down" ? null : "down")}
+              aria-pressed={feedback === "down"}
+              title={feedback === "down" ? "Clear feedback" : "Not interesting — thumbs down"}
+              className={`grid size-8 place-items-center rounded-md border transition-colors ${
+                feedback === "down"
+                  ? "border-down/50 bg-down-soft text-down"
+                  : "border-line text-muted hover:border-down/50 hover:text-down"
+              }`}
+            >
+              <ThumbsDown className="size-4" fill={feedback === "down" ? "currentColor" : "none"} />
+            </button>
+          </>
+        )}
         {jumpHref && (
           <Link
             href={jumpHref}

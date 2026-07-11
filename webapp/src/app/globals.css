@@ -33,6 +33,11 @@
   --color-down: #f87171;
   --color-down-soft: rgba(248, 113, 113, 0.14);
 
+  /* "AI flagged" accent — green, for the machine-flag badge + timeline marker.
+     Distinct from the lime signal and the thumbs-up green. */
+  --color-ai: #22c55e;
+  --color-ai-soft: rgba(34, 197, 94, 0.14);
+
   /* Type — distinctive, domain-appropriate */
   --font-display: var(--font-bricolage), ui-sans-serif, sans-serif;
   --font-sans: var(--font-hanken), ui-sans-serif, sans-serif;
