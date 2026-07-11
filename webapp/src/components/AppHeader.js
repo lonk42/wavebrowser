@@ -73,24 +73,22 @@ export default function AppHeader({
               <RadioTower className="size-4" />
               Live
             </button>
-            <div className="flex flex-col gap-1.5">
-              <Link
-                href="/bookmarks"
-                title="Browse bookmarked transmissions"
-                className="flex items-center gap-1.5 rounded-md border border-star/40 bg-star-soft px-2.5 py-1.5 font-mono text-[0.65rem] uppercase tracking-[0.15em] text-star transition-colors hover:border-star"
-              >
-                <Star className="size-4" />
-                Saved
-              </Link>
-              <Link
-                href="/flagged"
-                title="Browse AI-flagged transmissions"
-                className="flex items-center gap-1.5 rounded-md border border-ai/40 bg-ai-soft px-2.5 py-1.5 font-mono text-[0.65rem] uppercase tracking-[0.15em] text-ai transition-colors hover:border-ai"
-              >
-                <Sparkles className="size-4" />
-                AI
-              </Link>
-            </div>
+            <Link
+              href="/bookmarks"
+              title="Browse bookmarked transmissions"
+              className="flex items-center gap-1.5 rounded-md border border-star/40 bg-star-soft px-2.5 py-2 font-mono text-[0.65rem] uppercase tracking-[0.15em] text-star transition-colors hover:border-star"
+            >
+              <Star className="size-4" />
+              Saved
+            </Link>
+            <Link
+              href="/flagged"
+              title="Browse AI-flagged transmissions"
+              className="flex items-center gap-1.5 rounded-md border border-ai/40 bg-ai-soft px-2.5 py-2 font-mono text-[0.65rem] uppercase tracking-[0.15em] text-ai transition-colors hover:border-ai"
+            >
+              <Sparkles className="size-4" />
+              AI
+            </Link>
             <DayPager date={date} onChange={onDateChange} />
           </div>
         </div>

@@ -131,10 +131,65 @@ export default function RecordingCard({
         )}
       </button>
 
-      {/* Corner controls: AI flag badge + thumbs feedback (flagged cards only) +
-          jump-to-dashboard (bookmarks/flagged pages only) + star toggle. Siblings
-          of the play button, not nested inside it. */}
-      <div className="absolute right-2.5 top-2.5 flex items-center gap-1">
+      {/* Corner controls, stacked into a column. Top row: thumbs feedback
+          (flagged cards only) + jump-to-dashboard (bookmarks/flagged pages only)
+          + star toggle. The AI flag badge sits on its own row directly beneath
+          the star. Siblings of the play button, not nested inside it. */}
+      <div className="absolute right-2.5 top-2.5 flex flex-col items-end gap-1">
+        <div className="flex items-center gap-1">
+          {interesting && (
+            <>
+              <button
+                type="button"
+                onClick={() => onSetFeedback?.(item._id, feedback === "up" ? null : "up")}
+                aria-pressed={feedback === "up"}
+                title={feedback === "up" ? "Clear feedback" : "Good flag — thumbs up"}
+                className={`grid size-8 place-items-center rounded-md border transition-colors ${
+                  feedback === "up"
+                    ? "border-up/50 bg-up-soft text-up"
+                    : "border-line text-muted hover:border-up/50 hover:text-up"
+                }`}
+              >
+                <ThumbsUp className="size-4" fill={feedback === "up" ? "currentColor" : "none"} />
+              </button>
+              <button
+                type="button"
+                onClick={() => onSetFeedback?.(item._id, feedback === "down" ? null : "down")}
+                aria-pressed={feedback === "down"}
+                title={feedback === "down" ? "Clear feedback" : "Not interesting — thumbs down"}
+                className={`grid size-8 place-items-center rounded-md border transition-colors ${
+                  feedback === "down"
+                    ? "border-down/50 bg-down-soft text-down"
+                    : "border-line text-muted hover:border-down/50 hover:text-down"
+                }`}
+              >
+                <ThumbsDown className="size-4" fill={feedback === "down" ? "currentColor" : "none"} />
+              </button>
+            </>
+          )}
+          {jumpHref && (
+            <Link
+              href={jumpHref}
+              title="Open on the dashboard at this day & time"
+              className="grid size-8 place-items-center rounded-md border border-line text-muted transition-colors hover:border-signal/50 hover:text-signal"
+            >
+              <CalendarArrowUp className="size-4" />
+            </Link>
+          )}
+          <button
+            type="button"
+            onClick={() => onToggleBookmark?.(item._id, !bookmarked)}
+            aria-pressed={bookmarked}
+            title={bookmarked ? "Remove bookmark" : "Bookmark this transmission"}
+            className={`grid size-8 place-items-center rounded-md border transition-colors ${
+              bookmarked
+                ? "border-star/50 bg-star-soft text-star"
+                : "border-line text-muted hover:border-star/50 hover:text-star"
+            }`}
+          >
+            <Star className="size-4" fill={bookmarked ? "currentColor" : "none"} />
+          </button>
+        </div>
         {interesting && (
           <span
             title={item.interesting_reason || "Flagged as interesting"}
@@ -143,58 +198,6 @@ export default function RecordingCard({
             <Sparkles className="size-3.5" aria-label="Flagged as interesting" /> AI
           </span>
         )}
-        {interesting && (
-          <>
-            <button
-              type="button"
-              onClick={() => onSetFeedback?.(item._id, feedback === "up" ? null : "up")}
-              aria-pressed={feedback === "up"}
-              title={feedback === "up" ? "Clear feedback" : "Good flag — thumbs up"}
-              className={`grid size-8 place-items-center rounded-md border transition-colors ${
-                feedback === "up"
-                  ? "border-up/50 bg-up-soft text-up"
-                  : "border-line text-muted hover:border-up/50 hover:text-up"
-              }`}
-            >
-              <ThumbsUp className="size-4" fill={feedback === "up" ? "currentColor" : "none"} />
-            </button>
-            <button
-              type="button"
-              onClick={() => onSetFeedback?.(item._id, feedback === "down" ? null : "down")}
-              aria-pressed={feedback === "down"}
-              title={feedback === "down" ? "Clear feedback" : "Not interesting — thumbs down"}
-              className={`grid size-8 place-items-center rounded-md border transition-colors ${
-                feedback === "down"
-                  ? "border-down/50 bg-down-soft text-down"
-                  : "border-line text-muted hover:border-down/50 hover:text-down"
-              }`}
-            >
-              <ThumbsDown className="size-4" fill={feedback === "down" ? "currentColor" : "none"} />
-            </button>
-          </>
-        )}
-        {jumpHref && (
-          <Link
-            href={jumpHref}
-            title="Open on the dashboard at this day & time"
-            className="grid size-8 place-items-center rounded-md border border-line text-muted transition-colors hover:border-signal/50 hover:text-signal"
-          >
-            <CalendarArrowUp className="size-4" />
-          </Link>
-        )}
-        <button
-          type="button"
-          onClick={() => onToggleBookmark?.(item._id, !bookmarked)}
-          aria-pressed={bookmarked}
-          title={bookmarked ? "Remove bookmark" : "Bookmark this transmission"}
-          className={`grid size-8 place-items-center rounded-md border transition-colors ${
-            bookmarked
-              ? "border-star/50 bg-star-soft text-star"
-              : "border-line text-muted hover:border-star/50 hover:text-star"
-          }`}
-        >
-          <Star className="size-4" fill={bookmarked ? "currentColor" : "none"} />
-        </button>
       </div>
     </div>
   );
