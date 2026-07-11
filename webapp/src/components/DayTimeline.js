@@ -70,35 +70,43 @@ export default function DayTimeline({ items, visibleRange, onPick }) {
           {counts.map((c, i) => (
             <div
               key={i}
-              className="relative flex-1 overflow-hidden rounded-sm transition-colors"
+              className="flex-1 rounded-sm transition-colors"
               style={{
                 height: c ? `${Math.max(12, (c / max) * 100)}%` : "2px",
                 backgroundColor: c ? "var(--color-signal)" : "var(--color-line)",
                 opacity: c ? 0.55 + 0.45 * (c / max) : 1,
               }}
-            >
-              {/* Bookmarked share of this bucket, filled gold from the baseline */}
-              {starCounts[i] > 0 && (
-                <div
-                  className="absolute inset-x-0 bottom-0"
-                  style={{
-                    height: `${(starCounts[i] / c) * 100}%`,
-                    backgroundColor: "var(--color-star)",
-                  }}
-                />
-              )}
-              {/* AI-flagged share of this bucket, filled green from the top */}
-              {flagCounts[i] > 0 && (
-                <div
-                  className="absolute inset-x-0 top-0"
-                  style={{
-                    height: `${(flagCounts[i] / c) * 100}%`,
-                    backgroundColor: "var(--color-ai)",
-                  }}
-                />
-              )}
-            </div>
+            />
           ))}
+        </div>
+
+        {/* Bookmark / flag markers. Full-height so a single starred or flagged
+            clip reads clearly even in an otherwise-quiet bin (the activity bar
+            there would be only a few px tall). Gold = bookmark, green = AI flag;
+            a bin with both splits green (top) over gold (bottom). */}
+        <div className="pointer-events-none absolute inset-x-1 bottom-1 top-1 flex gap-px">
+          {counts.map((_, i) => {
+            const hasStar = starCounts[i] > 0;
+            const hasFlag = flagCounts[i] > 0;
+            if (!hasStar && !hasFlag) return <div key={i} className="flex-1" />;
+            const h = hasStar && hasFlag ? "50%" : "100%";
+            return (
+              <div key={i} className="relative flex-1">
+                {hasFlag && (
+                  <div
+                    className="absolute inset-x-0 top-0 rounded-sm"
+                    style={{ height: h, backgroundColor: "var(--color-ai)" }}
+                  />
+                )}
+                {hasStar && (
+                  <div
+                    className="absolute inset-x-0 bottom-0 rounded-sm"
+                    style={{ height: h, backgroundColor: "var(--color-star)" }}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {/* now-playing position */}
