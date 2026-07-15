@@ -22,6 +22,10 @@ spec:
         {{- include "wavebrowser.labels" . | nindent 8 }}
         app.kubernetes.io/component: icecast
     spec:
+      {{- with .Values.icecast.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: icecast
           image: "{{ .Values.icecast.image.repository }}:{{ .Values.icecast.image.tag }}"

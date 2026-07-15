@@ -126,6 +126,7 @@ transcriber:
 
 web:
   replicas: 1
+  nodeSelector: {}
   resources: {}
   service:
     type: ClusterIP
@@ -187,6 +188,7 @@ flagger:
 # it to the browser via /api/stream. ClusterIP only — never exposed directly.
 icecast:
   enabled: true
+  nodeSelector: {}
   image:
     repository: libretime/icecast
     tag: "2.4.4"
