@@ -20,6 +20,8 @@ jobs:
       contents: read
       packages: write
     strategy:
+      # Each image builds independently; a flaky external fetch in one must not cancel the others.
+      fail-fast: false
       matrix:
         include:
           - context: transcriber
