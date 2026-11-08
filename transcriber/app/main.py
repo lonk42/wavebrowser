@@ -139,6 +139,10 @@ class RecordingProcessor:
 
         mongo_client = pymongo.MongoClient(config.mongo_uri)
         self.collection = mongo_client[config.mongo_db][config.mongo_collection]
+        # Every queued file is checked by rel_path before transcribing, and the
+        # startup scan queues the whole archive; unindexed, each check is a full
+        # collection scan and the backlog walk takes hours. Idempotent.
+        self.collection.create_index("rel_path")
 
         self._observer = None
         self._stop = False
