@@ -98,12 +98,13 @@ transcriber:
   nodeSelector: {}
   # Set if your cluster requires a runtime class for GPU pods (e.g. "nvidia").
   runtimeClassName: ""
-  # Number of GPUs to request/limit (nvidia.com/gpu).
+  # Number of GPUs to request/limit (nvidia.com/gpu). 0 for remote mode.
   gpu: 1
   resources: {}
   # Persistent cache for downloaded whisper model weights so they are not
-  # re-downloaded on every restart.
+  # re-downloaded on every restart. Disable for remote mode.
   modelCache:
+    enabled: true
     storageClassName: ""
     storage: 5Gi
   env:
@@ -123,6 +124,11 @@ transcriber:
     # periodically reconciles the recordings dir and picks up anything the
     # watcher missed. Set "0" to rely on inotify alone.
     SWEEP_INTERVAL: "300"
+    # Remote mode: transcribe on a shared OpenAI-compatible server instead of
+    # loading a model here. WHISPER_MODEL then names the server's model id
+    # (e.g. Systran/faster-whisper-large-v3); WHISPER_DEVICE/COMPUTE_TYPE are
+    # ignored. Pair with gpu: 0, runtimeClassName: "" and modelCache.enabled: false.
+    # WHISPER_URL: http://whisper.example.svc.cluster.local:8000
 
 web:
   replicas: 1

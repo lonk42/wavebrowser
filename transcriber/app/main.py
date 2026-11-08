@@ -1,22 +1,26 @@
 """Wavebrowser transcriber.
 
 Watches a recordings directory for new MP3 files produced by rtlsdr-airband,
-transcribes them with faster-whisper on the GPU, and stores the result in
-MongoDB. Designed to coexist on a shared GPU: the model is loaded once and kept
-resident, defaulting to the int8_float16 build of large-v3 for a smaller VRAM
-footprint.
+transcribes them, and stores the result in MongoDB. Transcription runs either
+in-process with faster-whisper on the GPU (the default: the model is loaded once
+and kept resident, int8_float16 large-v3 for a smaller VRAM footprint) or, when
+WHISPER_URL is set, on a shared OpenAI-compatible server, with no GPU here.
 
 All configuration is via environment variables (see Config).
 """
 
 import os
 import re
+import json
+import uuid
 import sys
 import time
 import queue
 import signal
 import logging
 import threading
+import urllib.error
+import urllib.request
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -33,6 +37,9 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(message)s",
 )
 log = logging.getLogger("transcriber")
+
+# decode_audio() resamples to this rate; whisper is trained on it.
+SAMPLE_RATE = 16000
 
 # rtlsdr-airband filenames look like: <template>__<YYYYMMDD_HHMMSS>_<freq>.mp3
 # (e.g. r2__20241214_160043_146950000.mp3). The template prefix is ignored so a
@@ -100,20 +107,35 @@ class Config:
         self.whisper_language = os.environ.get("WHISPER_LANGUAGE", "en") or None
         self.whisper_initial_prompt = os.environ.get("WHISPER_INITIAL_PROMPT") or None
 
+        # Remote mode: base URL of an OpenAI-compatible transcription server
+        # (POST <url>/v1/audio/transcriptions). When set, no model is loaded
+        # here and WHISPER_MODEL is the model id the server knows it by. The
+        # clip is still decoded locally, for the waveform peaks and duration.
+        self.whisper_url = (os.environ.get("WHISPER_URL") or "").rstrip("/") or None
+        self.whisper_api_key = os.environ.get("WHISPER_API_KEY") or None
+        self.whisper_timeout = float(os.environ.get("WHISPER_TIMEOUT", "300"))
+
 
 class RecordingProcessor:
     def __init__(self, config):
         self.config = config
 
-        log.info(
-            "Loading faster-whisper model=%s device=%s compute_type=%s",
-            config.whisper_model, config.whisper_device, config.whisper_compute_type,
-        )
-        self.model = WhisperModel(
-            config.whisper_model,
-            device=config.whisper_device,
-            compute_type=config.whisper_compute_type,
-        )
+        if config.whisper_url:
+            log.info(
+                "Using remote transcription at %s model=%s",
+                config.whisper_url, config.whisper_model,
+            )
+            self.model = None
+        else:
+            log.info(
+                "Loading faster-whisper model=%s device=%s compute_type=%s",
+                config.whisper_model, config.whisper_device, config.whisper_compute_type,
+            )
+            self.model = WhisperModel(
+                config.whisper_model,
+                device=config.whisper_device,
+                compute_type=config.whisper_compute_type,
+            )
 
         mongo_client = pymongo.MongoClient(config.mongo_uri)
         self.collection = mongo_client[config.mongo_db][config.mongo_collection]
@@ -357,7 +379,7 @@ class RecordingProcessor:
             return
 
         log.info("Transcribing %s", rel_path)
-        text, info, peaks = self._run_whisper(path)
+        text, duration, language, peaks = self._run_whisper(path)
 
         # Empty result (silence/blips): never creates a card. Prune the file if
         # configured, otherwise just leave it untranscribed on disk.
@@ -376,8 +398,8 @@ class RecordingProcessor:
                     "rel_path": rel_path,
                     "date": file_datetime,
                     "frequency_hz": frequency_hz,
-                    # Audio length in seconds, from whisper's probe of the file.
-                    "duration": round(float(info.duration), 1),
+                    # Audio length in seconds, from the decoded samples.
+                    "duration": round(float(duration), 1),
                     # Downsampled waveform envelope (0..1) the web GUI draws as a
                     # faint background behind each card. Empty for silent clips.
                     "peaks": peaks,
@@ -386,7 +408,7 @@ class RecordingProcessor:
                     f"transcriptions.{self.config.transcription_key}": {
                         "transcription": text,
                         "model": self.config.whisper_model,
-                        "language": info.language,
+                        "language": language,
                         "date": datetime.now(timezone.utc),
                     }
                 },
@@ -428,8 +450,12 @@ class RecordingProcessor:
         # Decode the clip once (faster-whisper's own decoder) so we can both feed
         # the samples to the model and derive the waveform peaks the web GUI draws
         # behind each card - no second decode pass.
-        samples = decode_audio(str(path))
+        samples = decode_audio(str(path), sampling_rate=SAMPLE_RATE)
         peaks = compute_peaks(samples)
+        duration = len(samples) / SAMPLE_RATE
+        if self.model is None:
+            text, language = self._transcribe_remote(path)
+            return text, duration, language, peaks
         segments, info = self.model.transcribe(
             samples,
             language=self.config.whisper_language,
@@ -447,7 +473,58 @@ class RecordingProcessor:
             compression_ratio_threshold=2.4,
         )
         text = " ".join(segment.text.strip() for segment in segments).strip()
-        return text, info, peaks
+        return text, info.duration, info.language, peaks
+
+    def _transcribe_remote(self, path):
+        """POST the clip to the OpenAI-compatible server and return (text, language).
+
+        Only the OpenAI form fields are sent, so the server's own decoding
+        settings apply - the local-mode VAD and anti-hallucination tuning cannot
+        be passed per request. Any failure raises: the worker unclaims the file
+        and the next sweep retries it, so a server outage only delays clips.
+        """
+        fields = {
+            "model": self.config.whisper_model,
+            "response_format": "verbose_json",
+            "temperature": "0",
+        }
+        if self.config.whisper_language:
+            fields["language"] = self.config.whisper_language
+        if self.config.whisper_initial_prompt:
+            fields["prompt"] = self.config.whisper_initial_prompt
+
+        boundary = uuid.uuid4().hex
+        body = bytearray()
+        for name, value in fields.items():
+            body += (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                f"{value}\r\n"
+            ).encode()
+        body += (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{path.name}"\r\n'
+            "Content-Type: audio/mpeg\r\n\r\n"
+        ).encode()
+        body += path.read_bytes()
+        body += f"\r\n--{boundary}--\r\n".encode()
+
+        request = urllib.request.Request(
+            f"{self.config.whisper_url}/v1/audio/transcriptions",
+            data=bytes(body),
+            method="POST",
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        )
+        if self.config.whisper_api_key:
+            request.add_header("Authorization", f"Bearer {self.config.whisper_api_key}")
+        try:
+            with urllib.request.urlopen(request, timeout=self.config.whisper_timeout) as resp:
+                result = json.load(resp)
+        except urllib.error.HTTPError as err:
+            detail = err.read(500).decode(errors="replace")
+            raise RuntimeError(f"transcription server returned {err.code}: {detail}") from err
+        text = (result.get("text") or "").strip()
+        return text, result.get("language") or self.config.whisper_language
 
 
 if __name__ == "__main__":

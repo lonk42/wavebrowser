@@ -50,14 +50,37 @@ The transcriber is configured via environment variables (set under
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `WHISPER_MODEL` | `large-v3` | faster-whisper model |
+| `WHISPER_MODEL` | `large-v3` | faster-whisper model; in remote mode, the server's model id |
 | `WHISPER_DEVICE` | `cuda` | |
 | `WHISPER_COMPUTE_TYPE` | `int8_float16` | `float16` (~5GB) for max accuracy, `int8` (~3GB) for smallest footprint |
 | `WHISPER_LANGUAGE` | `en` | empty to auto-detect |
 | `WHISPER_INITIAL_PROMPT` | _(unset)_ | optional domain phrasing hint |
+| `WHISPER_URL` | _(unset)_ | base URL of an OpenAI-compatible transcription server; setting it enables remote mode |
+| `WHISPER_API_KEY` | _(unset)_ | bearer token for that server |
+| `WHISPER_TIMEOUT` | `300` | seconds per remote request |
 | `TRANSCRIPTION_KEY` | `whisper` | document key transcriptions are stored under |
 | `PRUNE_EMPTY` | `true` | delete recordings that transcribe to nothing (silence/static blips) instead of leaving them on the shared volume; set `false` to keep them |
 | `MONGODB_URI` | _(from secret)_ | |
+
+### Remote transcription
+
+With `WHISPER_URL` set, the transcriber sends each clip to `POST <url>/v1/audio/transcriptions` instead of loading a model, so it needs no GPU.
+Any OpenAI-compatible server works, e.g. [speaches](https://github.com/speaches-ai/speaches).
+Clips are still decoded locally for the waveform and duration.
+A failed request is retried by the next sweep.
+
+```yaml
+transcriber:
+  gpu: 0
+  runtimeClassName: ""
+  modelCache:
+    enabled: false
+  env:
+    WHISPER_URL: http://speaches.speaches.svc.cluster.local:8000
+    WHISPER_MODEL: Systran/faster-whisper-large-v3
+```
+
+The server applies its own decoding settings: the VAD and anti-hallucination tuning used in local mode cannot be passed through the OpenAI API.
 
 Recordings that yield an empty transcription never produce a card. With
 `PRUNE_EMPTY` on (the default) they are deleted from disk so blips don't fill the

@@ -46,14 +46,21 @@ spec:
           volumeMounts:
             - name: recordings
               mountPath: {{ .Values.transcriber.env.RECORDINGS_DIR | default "/recordings" }}
+            {{- if .Values.transcriber.modelCache.enabled }}
             - name: model-cache
               mountPath: /root/.cache/huggingface
+            {{- end }}
           resources:
+            {{- if not (or .Values.transcriber.gpu .Values.transcriber.resources.limits .Values.transcriber.resources.requests) }} {}{{ end }}
+            {{- if or .Values.transcriber.gpu .Values.transcriber.resources.limits }}
             limits:
+              {{- if .Values.transcriber.gpu }}
               nvidia.com/gpu: {{ .Values.transcriber.gpu }}
+              {{- end }}
               {{- with .Values.transcriber.resources.limits }}
               {{- toYaml . | nindent 14 }}
               {{- end }}
+            {{- end }}
             {{- with .Values.transcriber.resources.requests }}
             requests:
               {{- toYaml . | nindent 14 }}
@@ -62,6 +69,8 @@ spec:
         - name: recordings
           persistentVolumeClaim:
             claimName: {{ include "wavebrowser.fullname" . }}-recordings
+        {{- if .Values.transcriber.modelCache.enabled }}
         - name: model-cache
           persistentVolumeClaim:
             claimName: {{ include "wavebrowser.fullname" . }}-model-cache
+        {{- end }}
